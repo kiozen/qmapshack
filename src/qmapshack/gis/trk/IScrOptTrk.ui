@@ -6,14 +6,14 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>696</width>
-    <height>90</height>
+    <width>380</width>
+    <height>126</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Form</string>
   </property>
-  <layout class="QVBoxLayout" name="verticalLayout">
+  <layout class="QHBoxLayout" name="horizontalLayout">
    <property name="spacing">
     <number>3</number>
    </property>
@@ -30,25 +30,11 @@
     <number>3</number>
    </property>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout">
+    <layout class="QGridLayout" name="gridLayout">
      <property name="spacing">
-      <number>3</number>
+      <number>0</number>
      </property>
-     <item>
-      <widget class="QToolButton" name="toolEditDetails">
-       <property name="toolTip">
-        <string>View details and edit properties of track.</string>
-       </property>
-       <property name="text">
-        <string>...</string>
-       </property>
-       <property name="icon">
-        <iconset resource="../../resources.qrc">
-         <normaloff>:/icons/32x32/EditDetails.png</normaloff>:/icons/32x32/EditDetails.png</iconset>
-       </property>
-      </widget>
-     </item>
-     <item>
+     <item row="0" column="2">
       <widget class="QToolButton" name="toolTags">
        <property name="toolTip">
         <string>Set tags and rating.</string>
@@ -62,21 +48,47 @@
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="QToolButton" name="toolCopy">
+     <item row="2" column="3">
+      <widget class="QToolButton" name="toolEdit">
        <property name="toolTip">
-        <string>Copy track into another project.</string>
+        <string extracomment="use line breaks to keep a sensible tooltip width">Edit the position of track points and use automatic routing 
+to create new track points. This is used to create new tracks 
+to plan a tour.
+
+Note: This is the wrong tool to fix bad points of a real GPS 
+recording. Use the range tool. </string>
        </property>
        <property name="text">
         <string>...</string>
        </property>
        <property name="icon">
         <iconset resource="../../resources.qrc">
-         <normaloff>:/icons/32x32/Copy.png</normaloff>:/icons/32x32/Copy.png</iconset>
+         <normaloff>:/icons/32x32/LineMove.png</normaloff>:/icons/32x32/LineMove.png</iconset>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="0" column="1">
+      <widget class="QToolButton" name="toolEditDetails">
+       <property name="toolTip">
+        <string>View details and edit properties of track.</string>
+       </property>
+       <property name="text">
+        <string>...</string>
+       </property>
+       <property name="icon">
+        <iconset resource="../../resources.qrc">
+         <normaloff>:/icons/32x32/EditDetails.png</normaloff>:/icons/32x32/EditDetails.png</iconset>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1" colspan="4">
+      <widget class="Line" name="line">
+       <property name="orientation">
+        <enum>Qt::Orientation::Horizontal</enum>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="4">
       <widget class="QToolButton" name="toolDelete">
        <property name="toolTip">
         <string>Delete track from project.</string>
@@ -90,14 +102,7 @@
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="Line" name="line">
-       <property name="orientation">
-        <enum>Qt::Orientation::Vertical</enum>
-       </property>
-      </widget>
-     </item>
-     <item>
+     <item row="2" column="1">
       <widget class="QToolButton" name="toolProfile">
        <property name="toolTip">
         <string>Show on-screen profile and detailed information about points.</string>
@@ -114,7 +119,114 @@
        </property>
       </widget>
      </item>
-     <item>
+     <item row="0" column="3">
+      <widget class="QToolButton" name="toolCopy">
+       <property name="toolTip">
+        <string>Copy track into another project.</string>
+       </property>
+       <property name="text">
+        <string>...</string>
+       </property>
+       <property name="icon">
+        <iconset resource="../../resources.qrc">
+         <normaloff>:/icons/32x32/Copy.png</normaloff>:/icons/32x32/Copy.png</iconset>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="3">
+      <widget class="QToolButton" name="toolActivity">
+       <property name="toolTip">
+        <string>Set an activity for the complete track.</string>
+       </property>
+       <property name="text">
+        <string>...</string>
+       </property>
+       <property name="icon">
+        <iconset resource="../../resources.qrc">
+         <normaloff>:/icons/32x32/Activity.png</normaloff>:/icons/32x32/Activity.png</iconset>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="3">
+      <widget class="QToolButton" name="toolCopyWithWpt">
+       <property name="toolTip">
+        <string>Copy track together with all attached waypoints into another project.</string>
+       </property>
+       <property name="text">
+        <string>...</string>
+       </property>
+       <property name="icon">
+        <iconset resource="../../resources.qrc">
+         <normaloff>:/icons/32x32/CopyTrkWithWpt.png</normaloff>:/icons/32x32/CopyTrkWithWpt.png</iconset>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="4">
+      <widget class="QToolButton" name="toolAddInfo">
+       <property name="toolTip">
+        <string extracomment="use line breaks to keep a sensible tooltip width">Add a description to the selected track point.
+The track point will be marked with an auto-numbered bullet.
+A table with all descriptions will be shown in the track details dialog
+and for highlighted tracks in the map view.</string>
+       </property>
+       <property name="text">
+        <string>...</string>
+       </property>
+       <property name="icon">
+        <iconset resource="../../resources.qrc">
+         <normaloff>:/icons/32x32/AddPointInfo.png</normaloff>:/icons/32x32/AddPointInfo.png</iconset>
+       </property>
+      </widget>
+     </item>
+     <item row="5" column="2">
+      <widget class="QToolButton" name="toolNogo">
+       <property name="toolTip">
+        <string>Toggle Nogo-Line</string>
+       </property>
+       <property name="text">
+        <string>...</string>
+       </property>
+       <property name="icon">
+        <iconset resource="../../resources.qrc">
+         <normaloff>:/icons/32x32/NoGo.png</normaloff>:/icons/32x32/NoGo.png</iconset>
+       </property>
+       <property name="checkable">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item row="5" column="1">
+      <widget class="QToolButton" name="toolToArea">
+       <property name="toolTip">
+        <string>Convert track to area.</string>
+       </property>
+       <property name="text">
+        <string>...</string>
+       </property>
+       <property name="icon">
+        <iconset resource="../../resources.qrc">
+         <normaloff>:/icons/32x32/Area.png</normaloff>:/icons/32x32/Area.png</iconset>
+       </property>
+       <property name="checkable">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="4">
+      <widget class="QToolButton" name="toolReverse">
+       <property name="toolTip">
+        <string>Reverse track.</string>
+       </property>
+       <property name="text">
+        <string>...</string>
+       </property>
+       <property name="icon">
+        <iconset resource="../../resources.qrc">
+         <normaloff>:/icons/32x32/Reverse.png</normaloff>:/icons/32x32/Reverse.png</iconset>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="2">
       <widget class="QToolButton" name="toolRange">
        <property name="toolTip">
         <string extracomment="use line breaks to keep a sensible tooltip width">Select a range of points. You can use that tool to:
@@ -136,40 +248,7 @@ this is the right tool. Simply select the section of bad points
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="QToolButton" name="toolEdit">
-       <property name="toolTip">
-        <string extracomment="use line breaks to keep a sensible tooltip width">Edit the position of track points and use automatic routing 
-to create new track points. This is used to create new tracks 
-to plan a tour.
-
-Note: This is the wrong tool to fix bad points of a real GPS 
-recording. Use the range tool. </string>
-       </property>
-       <property name="text">
-        <string>...</string>
-       </property>
-       <property name="icon">
-        <iconset resource="../../resources.qrc">
-         <normaloff>:/icons/32x32/LineMove.png</normaloff>:/icons/32x32/LineMove.png</iconset>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QToolButton" name="toolReverse">
-       <property name="toolTip">
-        <string>Reverse track.</string>
-       </property>
-       <property name="text">
-        <string>...</string>
-       </property>
-       <property name="icon">
-        <iconset resource="../../resources.qrc">
-         <normaloff>:/icons/32x32/Reverse.png</normaloff>:/icons/32x32/Reverse.png</iconset>
-       </property>
-      </widget>
-     </item>
-     <item>
+     <item row="3" column="1">
       <widget class="QToolButton" name="toolCombine">
        <property name="toolTip">
         <string>Combine tracks.</string>
@@ -183,7 +262,7 @@ recording. Use the range tool. </string>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="3" column="2">
       <widget class="QToolButton" name="toolCut">
        <property name="toolTip">
         <string>Cut track at selected point. You can use this to:
@@ -202,52 +281,7 @@ recording. Use the range tool. </string>
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="QToolButton" name="toolActivity">
-       <property name="toolTip">
-        <string>Set an activity for the complete track.</string>
-       </property>
-       <property name="text">
-        <string>...</string>
-       </property>
-       <property name="icon">
-        <iconset resource="../../resources.qrc">
-         <normaloff>:/icons/32x32/Activity.png</normaloff>:/icons/32x32/Activity.png</iconset>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QToolButton" name="toolAddInfo">
-       <property name="toolTip">
-        <string extracomment="use line breaks to keep a sensible tooltip width">Add a description to the selected track point.
-The track point will be marked with an auto-numbered bullet.
-A table with all descriptions will be shown in the track details dialog
-and for highlighted tracks in the map view.</string>
-       </property>
-       <property name="text">
-        <string>...</string>
-       </property>
-       <property name="icon">
-        <iconset resource="../../resources.qrc">
-         <normaloff>:/icons/32x32/AddPointInfo.png</normaloff>:/icons/32x32/AddPointInfo.png</iconset>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QToolButton" name="toolColor">
-       <property name="toolTip">
-        <string>Change the color of the track.</string>
-       </property>
-       <property name="text">
-        <string>...</string>
-       </property>
-       <property name="icon">
-        <iconset resource="../../resources.qrc">
-         <normaloff>:/icons/32x32/SelectColor.png</normaloff>:/icons/32x32/SelectColor.png</iconset>
-       </property>
-      </widget>
-     </item>
-     <item>
+     <item row="4" column="2">
       <widget class="QToolButton" name="toolAddElevation">
        <property name="toolTip">
         <string>Replace elevation by the view's DEM data.</string>
@@ -261,21 +295,21 @@ and for highlighted tracks in the map view.</string>
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="QToolButton" name="toolCopyWithWpt">
+     <item row="4" column="1">
+      <widget class="QToolButton" name="toolColor">
        <property name="toolTip">
-        <string>Copy track together with all attached waypoints into another project.</string>
+        <string>Change the color of the track.</string>
        </property>
        <property name="text">
         <string>...</string>
        </property>
        <property name="icon">
         <iconset resource="../../resources.qrc">
-         <normaloff>:/icons/32x32/CopyTrkWithWpt.png</normaloff>:/icons/32x32/CopyTrkWithWpt.png</iconset>
+         <normaloff>:/icons/32x32/SelectColor.png</normaloff>:/icons/32x32/SelectColor.png</iconset>
        </property>
       </widget>
      </item>
-     <item>
+     <item row="4" column="4">
       <widget class="QToolButton" name="toolToRoute">
        <property name="toolTip">
         <string>Convert track to route.</string>
@@ -292,49 +326,15 @@ and for highlighted tracks in the map view.</string>
        </property>
       </widget>
      </item>
-     <item>
-      <widget class="QToolButton" name="toolToArea">
-       <property name="toolTip">
-        <string>Convert track to area.</string>
-       </property>
-       <property name="text">
-        <string>...</string>
-       </property>
-       <property name="icon">
-        <iconset resource="../../resources.qrc">
-         <normaloff>:/icons/32x32/Area.png</normaloff>:/icons/32x32/Area.png</iconset>
-       </property>
-       <property name="checkable">
-        <bool>true</bool>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QToolButton" name="toolNogo">
-       <property name="toolTip">
-        <string>Toggle Nogo-Line</string>
-       </property>
-       <property name="text">
-        <string>...</string>
-       </property>
-       <property name="icon">
-        <iconset resource="../../resources.qrc">
-         <normaloff>:/icons/32x32/NoGo.png</normaloff>:/icons/32x32/NoGo.png</iconset>
-       </property>
-       <property name="checkable">
-        <bool>true</bool>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <spacer name="horizontalSpacer">
+     <item row="6" column="1">
+      <spacer name="verticalSpacer">
        <property name="orientation">
-        <enum>Qt::Orientation::Horizontal</enum>
+        <enum>Qt::Orientation::Vertical</enum>
        </property>
        <property name="sizeHint" stdset="0">
         <size>
-         <width>40</width>
-         <height>20</height>
+         <width>20</width>
+         <height>1</height>
         </size>
        </property>
       </spacer>
@@ -345,6 +345,9 @@ and for highlighted tracks in the map view.</string>
     <widget class="QLabel" name="label">
      <property name="text">
       <string>TextLabel</string>
+     </property>
+     <property name="alignment">
+      <set>Qt::AlignmentFlag::AlignLeading|Qt::AlignmentFlag::AlignLeft|Qt::AlignmentFlag::AlignTop</set>
      </property>
      <property name="openExternalLinks">
       <bool>true</bool>
