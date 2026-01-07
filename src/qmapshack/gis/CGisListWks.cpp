@@ -94,7 +94,90 @@ class CGisListWksEditLock {
   bool waitCursor;
 };
 
+class TreeIconDelegate : public QStyledItemDelegate {
+ public:
+  using QStyledItemDelegate::QStyledItemDelegate;
+
+  // STEP 1: Intercept the data before painting
+  void initStyleOption(QStyleOptionViewItem* option, const QModelIndex& index) const override {
+    QStyledItemDelegate::initStyleOption(option, index);
+    // Remove the icon so the base class 'paint' never sees it
+    option->icon = QIcon();
+    option->features &= ~QStyleOptionViewItem::HasDecoration;
+  }
+
+  // STEP 2: Manually draw the icon at your specific size
+  void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+    // 1. Prepare a 'Full' option to calculate correct style geometry
+    QStyleOptionViewItem fullOpt = option;
+    initStyleOption(&fullOpt, index);
+
+    // 2. Determine Checkbox Position
+    // We get the rect before stripping the icon so the style calculates
+    // the checkbox position correctly relative to the standard layout.
+    QStyle* style = fullOpt.widget ? fullOpt.widget->style() : QApplication::style();
+    QRect checkRect = style->subElementRect(QStyle::SE_ItemViewItemCheckIndicator, &fullOpt, fullOpt.widget);
+
+    // 3. Draw standard parts (Selection, Focus, Text, Checkbox)
+    // We use a 'stripped' option so the base class doesn't draw its own blurry icon.
+    QStyleOptionViewItem strippedOpt = fullOpt;
+    strippedOpt.icon = QIcon();
+    strippedOpt.features &= ~QStyleOptionViewItem::HasDecoration;
+    QStyledItemDelegate::paint(painter, strippedOpt, index);
+
+    // 4. Render High-Quality Custom Icon
+    QIcon icon = index.data(Qt::DecorationRole).value<QIcon>();
+    if (!icon.isNull()) {
+      bool isTopLevel = !index.parent().isValid();
+      QSize targetSize = isTopLevel ? QSize(32, 32) : QSize(22, 22);
+
+      // Calculate horizontal position (X)
+      int iconX = 0;
+      if (index.data(Qt::CheckStateRole).isValid() && !checkRect.isNull()) {
+        // If checkbox exists, place icon to the right of it + 6px padding
+        iconX = checkRect.right() + 6;
+      } else {
+        // Otherwise, get the standard decoration start point (after branch arrows)
+        QRect decorRect = style->subElementRect(QStyle::SE_ItemViewItemDecoration, &fullOpt, fullOpt.widget);
+        iconX = decorRect.left();
+      }
+
+      // Calculate vertical centering (Y)
+      int yOffset = (option.rect.height() - targetSize.height()) / 2;
+      QRect iconRect(iconX, option.rect.top() + yOffset, targetSize.width(), targetSize.height());
+
+      // --- HIGH QUALITY RENDERING BLOCK ---
+      painter->save();
+
+      // Handle High-DPI (4K/Retina) scaling
+      qreal dpr = painter->device()->devicePixelRatio();
+      // Fetch a pixmap large enough for the screen resolution
+      QPixmap pixmap = icon.pixmap(targetSize * dpr);
+      pixmap.setDevicePixelRatio(dpr);
+
+      // Enable smooth scaling (Bilinear/Trilinear)
+      painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+      painter->drawPixmap(iconRect, pixmap);
+
+      painter->restore();
+    }
+  }
+
+  QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+    QSize s = QStyledItemDelegate::sizeHint(option, index);
+    if (!index.parent().isValid()) {
+      s.setHeight(qMax(s.height(), 32));  // Ensure top level rows are tall enough
+    } else {
+      s.setHeight(22);
+    }
+    return s;
+  }
+};
+
 CGisListWks::CGisListWks(QWidget* parent) : QTreeWidget(parent) {
+  setIconSize({32, 32});
+  setItemDelegate(new TreeIconDelegate(this));
+
   db = QSqlDatabase::addDatabase("QSQLITE", "Workspace1");
   QString config = QDir(IAppSetup::getPlatformInstance()->userDataPath()).filePath("workspace.db");
   db.setDatabaseName(config);
@@ -770,7 +853,7 @@ void CGisListWks::slotSaveWorkspace() {
     query.bindValue(":name", project->getName());
     query.bindValue(":changed", project->isChanged());
 
-    bool visible = (project->checkState(CGisListDB::eColumnCheckbox) == Qt::Checked);
+    bool visible = project->isVisible();
     query.bindValue(":visible", visible);
     query.bindValue(":data", data);
     QUERY_EXEC(continue);
@@ -824,21 +907,21 @@ void CGisListWks::slotLoadWorkspace() {
       switch (type) {
         case IGisProject::eTypeQms: {
           project = new CQmsProject(name, this);
-          project->setCheckState(CGisListDB::eColumnCheckbox, visible);  // (1a)
+          // project->setCheckState(CGisListDB::eColumnCheckbox, visible);  // (1a)
           *project << stream;
           break;
         }
 
         case IGisProject::eTypeQlb: {
           project = new CQlbProject(name, this);
-          project->setCheckState(CGisListDB::eColumnCheckbox, visible);  // (1a)
+          // project->setCheckState(CGisListDB::eColumnCheckbox, visible);  // (1a)
           *project << stream;
           break;
         }
 
         case IGisProject::eTypeGpx: {
           project = new CGpxProject(name, this);
-          project->setCheckState(CGisListDB::eColumnCheckbox, visible);  // (1b)
+          // project->setCheckState(CGisListDB::eColumnCheckbox, visible);  // (1b)
           *project << stream;
           break;
         }
@@ -846,7 +929,7 @@ void CGisListWks::slotLoadWorkspace() {
         case IGisProject::eTypeDb: {
           CDBProject* dbProject;
           project = dbProject = new CDBProject(this);
-          project->setCheckState(CGisListDB::eColumnCheckbox, visible);  // (1c)
+          // project->setCheckState(CGisListDB::eColumnCheckbox, visible);  // (1c)
 
           project->IGisProject::operator<<(stream);
           dbProject->restoreDBLink();
@@ -862,7 +945,7 @@ void CGisListWks::slotLoadWorkspace() {
 
         case IGisProject::eTypeSlf: {
           project = new CSlfProject(name, false);
-          project->setCheckState(CGisListDB::eColumnCheckbox, visible);  // (1d)
+          // project->setCheckState(CGisListDB::eColumnCheckbox, visible);  // (1d)
           *project << stream;
 
           // the CSlfProject does not - as the other C*Project - register itself in the list
@@ -873,28 +956,28 @@ void CGisListWks::slotLoadWorkspace() {
 
         case IGisProject::eTypeFit: {
           project = new CFit2Project(name, this);
-          project->setCheckState(CGisListDB::eColumnCheckbox, visible);
+          // project->setCheckState(CGisListDB::eColumnCheckbox, visible);
           *project << stream;
           break;
         }
 
         case IGisProject::eTypeTcx: {
           project = new CTcxProject(name, this);
-          project->setCheckState(CGisListDB::eColumnCheckbox, visible);
+          // project->setCheckState(CGisListDB::eColumnCheckbox, visible);
           *project << stream;
           break;
         }
 
         case IGisProject::eTypeSml: {
           project = new CSmlProject(name, this);
-          project->setCheckState(CGisListDB::eColumnCheckbox, visible);
+          // project->setCheckState(CGisListDB::eColumnCheckbox, visible);
           *project << stream;
           break;
         }
 
         case IGisProject::eTypeLog: {
           project = new CSmlProject(name, this);
-          project->setCheckState(CGisListDB::eColumnCheckbox, visible);
+          // project->setCheckState(CGisListDB::eColumnCheckbox, visible);
           *project << stream;
           break;
         }
@@ -1106,10 +1189,10 @@ void CGisListWks::slotContextMenu(const QPoint& point) {
     IGisProject* project = dynamic_cast<IGisProject*>(item);
     if (nullptr != project) {
       // as soon as we find an unchecked element, not all elements are checked (and vice versa)
-      if (project->checkState(CGisListDB::eColumnCheckbox) == Qt::Unchecked) {
-        allChecked = false;
-      } else {
+      if (project->isVisible()) {
         allUnchecked = false;
+      } else {
+        allChecked = false;
       }
 
       if (project->canSave()) {

@@ -70,7 +70,7 @@ QString IGisProject::keyUserFocus;
 IGisProject::IGisProject(type_e type, const QString& filename, CGisListWks* parent)
     : QTreeWidgetItem(parent), type(type), filename(filename) {
   memset(cntItemsByType, 0, sizeof(cntItemsByType));
-  setCheckState(CGisListWks::eColumnCheckBox, Qt::Checked);
+  // setCheckState(CGisListWks::eColumnCheckBox, Qt::Checked);
 
   if (parent) {
     // move project up the list until there a re only projects, no devices
@@ -95,7 +95,7 @@ IGisProject::IGisProject(type_e type, const QString& filename, CGisListWks* pare
 IGisProject::IGisProject(type_e type, const QString& filename, IDevice* parent)
     : QTreeWidgetItem(parent), type(type), filename(filename) {
   memset(cntItemsByType, 0, sizeof(cntItemsByType));
-  setCheckState(CGisListWks::eColumnCheckBox, Qt::Checked);
+  // setCheckState(CGisListWks::eColumnCheckBox, Qt::Checked);
   nameSuffix = parent->getName();
 }
 
@@ -170,7 +170,7 @@ bool IGisProject::askBeforClose() {
   return res == QMessageBox::Abort;
 }
 
-bool IGisProject::isVisible() const { return checkState(CGisListWks::eColumnCheckBox) == Qt::Checked; }
+bool IGisProject::isVisible() const { return true; /*checkState(CGisListWks::eColumnCheckBox) == Qt::Checked;*/ }
 
 void IGisProject::genKey() const {
   if (key.isEmpty()) {

@@ -24,7 +24,6 @@
 #include "dem/CDemVRT.h"
 #include "dem/CDemWCS.h"
 #include "dem/IDemProp.h"
-#include "misc.h"
 
 QRecursiveMutex CDemItem::mutexActiveDems;
 

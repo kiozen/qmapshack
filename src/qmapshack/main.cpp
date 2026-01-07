@@ -32,7 +32,7 @@ int main(int argc, char** argv) {
   QCoreApplication::setOrganizationName("QLandkarte");
   QCoreApplication::setOrganizationDomain("qlandkarte.org");
   QCoreApplication::setApplicationVersion(VER_STR);
-
+  QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
   IAppSetup* env = IAppSetup::getPlatformInstance();
   env->processArguments();
   env->initLogHandler();
