@@ -1904,7 +1904,7 @@ void CGisItemTrk::drawItem(QPainter& p, const QRectF& viewport, CGisDraw* gis) {
     return;
   }
 
-  if (hasUserFocus() && mouseMoveFocus && (mode != eModeRange)) {
+  if (hasUserFocus() && mouseMoveFocus && mouseMoveFocus->valid && (mode != eModeRange)) {
     // derive anchor
     QPointF anchor(mouseMoveFocus->lon, mouseMoveFocus->lat);
     anchor *= DEG_TO_RAD;
@@ -1955,6 +1955,7 @@ void CGisItemTrk::drawItem(QPainter& p, const QRectF& viewport, CGisDraw* gis) {
 
     QRect box(0, 0, w, h);
     box.moveBottomLeft(anchor.toPoint() + QPoint(-50, -50));
+
     CDraw::bubble(p, box, anchor.toPoint(), colorBg, 18 /* px */, 21 /* px */);
 
     p.save();

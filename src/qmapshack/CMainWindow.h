@@ -90,6 +90,7 @@ class CMainWindow : public QMainWindow, private Ui::IMainWindow {
   bool isShowTrackInfoTable() const;
   bool isShowTrackInfoPoints() const;
   bool isShowTrackProfile() const;
+  bool isShowTrackPointTable() const;
   bool isShowTrackHighlight() const;
 
   bool flipMouseWheel() const;

@@ -192,6 +192,7 @@ CMainWindow::CMainWindow() : id(QRandomGenerator::global()->generate()) {
   connect(actionShowTrackInfoPoints, &QAction::changed, this, &CMainWindow::slotUpdateTabWidgets);
   connect(actionShowTrackSummary, &QAction::changed, this, &CMainWindow::slotUpdateTabWidgets);
   connect(actionShowTrackProfile, &QAction::changed, this, &CMainWindow::slotUpdateTabWidgets);
+  connect(actionShowTrackPointTable, &QAction::changed, this, &CMainWindow::slotUpdateTabWidgets);
   connect(actionShowTrackHighlight, &QAction::changed, this, &CMainWindow::slotUpdateTabWidgets);
   connect(actionShowTrackInfoPoints, &QAction::triggered, actionShowTrackInfoTable, &QAction::setEnabled);
   connect(actionShowTrackProfile, &QAction::triggered, actionProfileIsWindow, &QAction::setEnabled);
@@ -291,6 +292,7 @@ CMainWindow::CMainWindow() : id(QRandomGenerator::global()->generate()) {
   actionShowTrackInfoPoints->setChecked(cfg.value("ShowTrackInfoPoints", true).toBool());
   actionShowTrackSummary->setChecked(cfg.value("ShowTrackSummary", true).toBool());
   actionShowTrackProfile->setChecked(cfg.value("ShowTrackProfile", true).toBool());
+  actionShowTrackPointTable->setChecked(cfg.value("ShowTrackPointTable", true).toBool());
   actionShowTrackHighlight->setChecked(cfg.value("ShowTrackHighlight", true).toBool());
   actionFlipMouseWheel->setChecked(cfg.value("flipMouseWheel", false).toBool());
   actionProfileIsWindow->setChecked(cfg.value("profileIsWindow", false).toBool());
@@ -378,6 +380,7 @@ CMainWindow::CMainWindow() : id(QRandomGenerator::global()->generate()) {
   menu->addAction(actionShowTrackInfoPoints);
   menu->addAction(actionShowTrackInfoTable);
   menu->addAction(actionShowTrackProfile);
+  menu->addAction(actionShowTrackPointTable);
   menu->addAction(actionProfileIsWindow);
   actionTrackInfo->setMenu(menu);
 
@@ -407,6 +410,7 @@ CMainWindow::CMainWindow() : id(QRandomGenerator::global()->generate()) {
                       actionShowTrackInfoTable,
                       actionShowTrackSummary,
                       actionShowTrackProfile,
+                      actionShowTrackPointTable,
                       actionProfileIsWindow,
                       actionSetupDEMPaths,
                       actionAbout,
@@ -577,6 +581,7 @@ CMainWindow::~CMainWindow() {
   cfg.setValue("ShowTrackInfoPoints", actionShowTrackInfoPoints->isChecked());
   cfg.setValue("ShowTrackSummary", actionShowTrackSummary->isChecked());
   cfg.setValue("ShowTrackProfile", actionShowTrackProfile->isChecked());
+  cfg.setValue("ShowTrackPointTable", actionShowTrackPointTable->isChecked());
   cfg.setValue("ShowTrackHighlight", actionShowTrackHighlight->isChecked());
   cfg.setValue("flipMouseWheel", actionFlipMouseWheel->isChecked());
   cfg.setValue("profileIsWindow", actionProfileIsWindow->isChecked());
@@ -662,6 +667,7 @@ CCanvas* CMainWindow::createCanvas(const QString& name) {
   connect(actionShowTrackInfoPoints, &QAction::changed, view, [view] { view->slotUpdateTrackInfo(true); });
   connect(actionShowTrackSummary, &QAction::changed, view, [view] { view->slotUpdateTrackInfo(false); });
   connect(actionShowTrackProfile, &QAction::changed, view, [view] { view->slotUpdateTrackInfo(false); });
+  connect(actionShowTrackPointTable, &QAction::changed, view, [view] { view->slotUpdateTrackInfo(false); });
 
   return view;
 }
@@ -721,6 +727,8 @@ bool CMainWindow::isShowTrackInfoTable() const {
 bool CMainWindow::isShowTrackInfoPoints() const { return actionShowTrackInfoPoints->isChecked(); }
 
 bool CMainWindow::isShowTrackProfile() const { return actionShowTrackProfile->isChecked(); }
+
+bool CMainWindow::isShowTrackPointTable() const { return actionShowTrackPointTable->isChecked(); }
 
 bool CMainWindow::isShowTrackHighlight() const { return actionShowTrackHighlight->isChecked(); }
 

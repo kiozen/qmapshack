@@ -52,6 +52,7 @@ class IPlot;
 struct SGisLine;
 struct IPoiItem;
 class CTableTrkInfo;
+class CTableTrk;
 
 class CCanvas : public QWidget {
   Q_OBJECT
@@ -238,6 +239,7 @@ class CCanvas : public QWidget {
   bool isShowTrackInfoTable() const;
   bool isShowTrackInfoPoints() const;
   bool isShowTrackProfile() const;
+  bool isShowTrackPointTable() const;
   bool isShowTrackHighlight() const;
 
   bool showTrackOverlays = true;
@@ -287,6 +289,8 @@ class CCanvas : public QWidget {
   IGisItem::key_t keyTrackOnFocus;
   /// the track profile plot
   QPointer<IPlot> plotTrackProfile;
+
+  QPointer<CTableTrk> tableTrackPoints;
   /// a label with a track
   QLabel* labelTrackStatistic;
 

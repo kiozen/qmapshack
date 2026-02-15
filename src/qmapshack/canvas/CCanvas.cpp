@@ -30,6 +30,7 @@
 #include "gis/IGisLine.h"
 #include "gis/ovl/CGisItemOvlArea.h"
 #include "gis/trk/CGisItemTrk.h"
+#include "gis/trk/CTableTrk.h"
 #include "grid/CGrid.h"
 #include "grid/CGridSetup.h"
 #include "helpers/CDraw.h"
@@ -820,6 +821,7 @@ void CCanvas::slotCheckTrackOnFocus() {
     // get access to current track object
     delete plotTrackProfile;
     delete colorLegend;
+    delete tableTrackPoints;
     keyTrackOnFocus.clear();
     labelTrackStatistic->clear();
     labelTrackStatistic->hide();
@@ -832,6 +834,9 @@ void CCanvas::slotCheckTrackOnFocus() {
       update();
       return;
     }
+
+    tableTrackPoints = new CTableTrk(this);
+    tableTrackPoints->setTrack(trk2);
 
     // create new profile plot, the plot will register itself at the track
     plotTrackProfile = new CPlotProfile(
@@ -915,6 +920,10 @@ void CCanvas::slotUpdateTrackInfo(bool updateVisuals) {
 
   if (isVisible() && (plotTrackProfile != nullptr)) {
     plotTrackProfile->setVisible(isShowTrackProfile());
+  }
+
+  if (isVisible() && (tableTrackPoints != nullptr)) {
+    tableTrackPoints->setVisible(isShowTrackPointTable());
   }
 
   if (updateVisuals) {
@@ -1113,6 +1122,11 @@ void CCanvas::setSizeTrackProfile() {
   } else {
     plotTrackProfile->resize(getTrackProfileSize(height()));
     plotTrackProfile->move(20, height() - plotTrackProfile->height() - 20);
+
+    tableTrackPoints->resize(700, plotTrackProfile->height());
+    const QRect& r = plotTrackProfile->geometry();
+    qDebug() << r;
+    tableTrackPoints->move(r.right() + 10, r.top());
   }
 }
 
@@ -1249,6 +1263,7 @@ bool CCanvas::isShowTrackSummary() const { return CMainWindow::self().isShowTrac
 bool CCanvas::isShowTrackInfoTable() const { return CMainWindow::self().isShowTrackInfoTable() && showTrackOverlays; }
 bool CCanvas::isShowTrackInfoPoints() const { return CMainWindow::self().isShowTrackInfoPoints() && showTrackOverlays; }
 bool CCanvas::isShowTrackProfile() const { return CMainWindow::self().isShowTrackProfile() && showTrackOverlays; }
+bool CCanvas::isShowTrackPointTable() const { return CMainWindow::self().isShowTrackPointTable() && showTrackOverlays; }
 bool CCanvas::isShowTrackHighlight() const { return CMainWindow::self().isShowTrackHighlight() && showTrackOverlays; }
 
 void CCanvas::linkMapViewEnabled() { emit sigMoveAndZoom(map->zoom(), posFocus); }

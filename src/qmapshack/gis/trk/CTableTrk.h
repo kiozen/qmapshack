@@ -32,7 +32,7 @@ class CTableTrk : public QTreeWidget, public INotifyTrk {
   void setTrack(CGisItemTrk* track);
 
   void updateData() override;
-  void setMouseFocus(const CTrackData::trkpt_t* pt) override {}
+  void setMouseFocus(const CTrackData::trkpt_t* pt) override;
   void setMouseRangeFocus(const CTrackData::trkpt_t* pt1, const CTrackData::trkpt_t* pt2) override {}
   void setMouseClickFocus(const CTrackData::trkpt_t* pt) override {}
 
@@ -58,8 +58,13 @@ class CTableTrk : public QTreeWidget, public INotifyTrk {
   void slotItemSelectionChanged();
   void slotItemDoubleClicked(QTreeWidgetItem* item, int column);
 
+ protected:
+  void leaveEvent(QEvent* /*e*/) override;
+  void enterEvent(QEnterEvent* /*e*/) override;
+
  private:
   CGisItemTrk* trk = nullptr;
+  bool internalEdit = false;
 };
 
 #endif  // CTABLETRK_H

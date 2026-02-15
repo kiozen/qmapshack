@@ -20,6 +20,8 @@
 
 #include <QtWidgets>
 
+#include "CMainWindow.h"
+#include "canvas/CCanvas.h"
 #include "gis/proj_x.h"
 #include "helpers/CElevationDialog.h"
 #include "helpers/CSettings.h"
@@ -110,6 +112,13 @@ void CTableTrk::setTrack(CGisItemTrk* track) {
   }
 
   adjustSize();
+}
+
+void CTableTrk::setMouseFocus(const CTrackData::trkpt_t* pt) {
+  if (trk == nullptr || internalEdit || pt == nullptr) {
+    return;
+  }
+  setCurrentItem(topLevelItem(pt->idxTotal));
 }
 
 void CTableTrk::updateData() {
@@ -205,7 +214,11 @@ void CTableTrk::slotItemSelectionChanged() {
   QTreeWidgetItem* item = currentItem();
   if (nullptr != item) {
     quint32 idx = item->text(eColNum).toUInt();
+    internalEdit = true;
     trk->setMouseFocusByTotalIndex(idx, CGisItemTrk::eFocusMouseMove, "CTableTrk");
+    internalEdit = false;
+
+    CMainWindow::self().getVisibleCanvas()->update();
   }
 }
 
@@ -227,4 +240,17 @@ void CTableTrk::slotItemDoubleClicked(QTreeWidgetItem* item, int column) {
       trk->setElevation(idx, var.toInt());
     }
   }
+}
+
+void CTableTrk::leaveEvent(QEvent* e) {
+  CCanvas::restoreOverrideCursor("CTableTrk::leaveEvent");
+  update();
+  e->accept();
+}
+
+void CTableTrk::enterEvent(QEnterEvent* e) {
+  QCursor cursor = QCursor(QPixmap(":/cursors/cursorArrow.png"), 0, 0);
+  CCanvas::setOverrideCursor(cursor, "CTableTrk::enterEvent");
+  update();
+  e->accept();
 }
