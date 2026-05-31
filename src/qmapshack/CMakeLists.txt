@@ -1022,6 +1022,7 @@ target_link_libraries(${APPLICATION_NAME}
     Qt6::PrintSupport
     Qt6::UiTools
     Qt6::Network
+    Qt6::Concurrent
     Qt6::WebEngineWidgets
     Qt6::Qml
     Qt6::Help

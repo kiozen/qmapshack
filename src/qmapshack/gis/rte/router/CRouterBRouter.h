@@ -44,6 +44,7 @@ class CRouterBRouter : public IRouter, private Ui::IRouterBRouter {
 
   void calcRoute(const IGisItem::key_t& key) override;
   int calcRoute(const QPointF& p1, const QPointF& p2, QPolygonF& coords, qreal* costs = nullptr) override;
+  void calcRouteAsync(const QPointF& p1, const QPointF& p2, RouteCallback callback) override;
   bool hasFastRouting() override;
   QString getOptions() override;
   void routerSelected() override;

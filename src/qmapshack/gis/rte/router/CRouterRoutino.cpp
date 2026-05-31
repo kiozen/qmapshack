@@ -20,6 +20,8 @@
 
 #include <routino.h>
 
+#include <QScopeGuard>
+#include <QtConcurrent>
 #include <QtWidgets>
 
 #include "CMainWindow.h"
@@ -38,16 +40,24 @@
 #define ROUTINO_PATH_ENCODING toUtf8()
 #endif
 
-QPointer<CProgressDialog> CRouterRoutino::progress;
+std::atomic<int> CRouterRoutino::progressValue{0};
+std::atomic<bool> CRouterRoutino::cancelRequested{false};
 
-int ProgressFunc(double complete) {
-  if (CRouterRoutino::progress.isNull()) {
+// Used by the synchronous calcRoute paths (main thread, blocking).
+// Calls processEvents() so the dialog stays responsive.
+static CProgressDialog* syncProgress = nullptr;
+int SyncProgressFunc(double complete) {
+  if (!syncProgress) {
     return true;
   }
+  syncProgress->setValue(complete * 100);  // setValue calls processEvents()
+  return !syncProgress->wasCanceled();
+}
 
-  CRouterRoutino::progress->setValue(complete * 100);
-
-  return !CRouterRoutino::progress->wasCanceled();
+// Used by calcRouteAsync (worker thread) — must only touch the atomics, no Qt objects.
+int ProgressFunc(double complete) {
+  CRouterRoutino::progressValue.store(static_cast<int>(complete * 100));
+  return !CRouterRoutino::cancelRequested.load();
 }
 
 CRouterRoutino* CRouterRoutino::pSelf = nullptr;
@@ -249,7 +259,8 @@ void CRouterRoutino::buildDatabaseList() {
 
       // qDebug() << "buildDatabase Prefix" << prefix;
 
-      Routino_Database* data = Routino_LoadDatabase(dir.absolutePath().ROUTINO_PATH_ENCODING, prefix.ROUTINO_PATH_ENCODING);
+      Routino_Database* data =
+          Routino_LoadDatabase(dir.absolutePath().ROUTINO_PATH_ENCODING, prefix.ROUTINO_PATH_ENCODING);
       qDebug() << "Loaded Routino DB" << dir.absolutePath().toUtf8().data() << "  " << prefix.toUtf8().data();
 
       if (data == nullptr) {
@@ -387,15 +398,17 @@ void CRouterRoutino::calcRoute(const IGisItem::key_t& key) {
       idx++;
     }
 
-    progress = new CProgressDialog(tr("Calculate route with %1").arg(getOptions()), 0, NOINT, this);
+    syncProgress = new CProgressDialog(tr("Calculate route with %1").arg(getOptions()), 0, NOINT, this);
 
-    Routino_Output* route =
-        Routino_CalculateRoute(data, profile, translation, waypoints.data(), waypoints.size(), options, ProgressFunc);
+    Routino_Output* route = Routino_CalculateRoute(data, profile, translation, waypoints.data(), waypoints.size(),
+                                                   options, SyncProgressFunc);
 
-    delete progress;
+    delete syncProgress;
+    syncProgress = nullptr;
 
     if (nullptr != route) {
-      rte->setResultFromRoutino(route, getOptions() + tr("<br/>Calculation time: %1s").arg(time.elapsed() / 1000.0, 0, 'f', 2));
+      rte->setResultFromRoutino(
+          route, getOptions() + tr("<br/>Calculation time: %1s").arg(time.elapsed() / 1000.0, 0, 'f', 2));
       Routino_DeleteRoute(route);
     } else {
       if (Routino_errno != ROUTINO_ERROR_PROGRESS_ABORTED) {
@@ -460,11 +473,12 @@ int CRouterRoutino::calcRoute(const QPointF& p1, const QPointF& p2, QPolygonF& c
       throw xlateRoutinoError(Routino_errno);
     }
 
-    progress = new CProgressDialog(tr("Calculate route with %1").arg(getOptions()), 0, NOINT, this);
+    syncProgress = new CProgressDialog(tr("Calculate route with %1").arg(getOptions()), 0, NOINT, this);
 
-    Routino_Output* route = Routino_CalculateRoute(data, profile, translation, waypoints, 2, options, ProgressFunc);
+    Routino_Output* route = Routino_CalculateRoute(data, profile, translation, waypoints, 2, options, SyncProgressFunc);
 
-    delete progress;
+    delete syncProgress;
+    syncProgress = nullptr;
 
     if (route != nullptr) {
       Routino_Output* next = route;
@@ -503,4 +517,94 @@ int CRouterRoutino::calcRoute(const QPointF& p1, const QPointF& p2, QPolygonF& c
 
   mutex.unlock();
   return coords.size();
+}
+
+void CRouterRoutino::calcRouteAsync(const QPointF& p1, const QPointF& p2, RouteCallback callback) {
+  if (!mutex.tryLock()) {
+    QTimer::singleShot(0, this, [callback]() { callback(-1, {}); });
+    return;
+  }
+  // Unlocks the mutex automatically on any early return during setup.
+  // Disarmed by guard.dismiss() once the async worker takes ownership.
+  auto guard = qScopeGuard([this]() { mutex.unlock(); });
+
+  auto deliverFailure = [this, &callback]() { QTimer::singleShot(0, this, [callback]() { callback(-1, {}); }); };
+
+  QVariantMap map = comboDatabase->currentData(Qt::UserRole).toMap();
+  Routino_Database* data = reinterpret_cast<Routino_Database*>(map["db"].toULongLong());
+  if (!data) {
+    deliverFailure();
+    return;
+  }
+
+  if (loadProfiles(map["profilesPath"].toString()) != 0) {
+    deliverFailure();
+    return;
+  }
+
+  const QString strProfile = comboProfile->currentData(Qt::UserRole).toString();
+  const QString strLanguage = comboLanguage->currentData(Qt::UserRole).toString();
+
+  Routino_Profile* profile = Routino_GetProfile(strProfile.ROUTINO_PATH_ENCODING);
+  if (!profile || Routino_ValidateProfile(data, profile) != 0) {
+    deliverFailure();
+    return;
+  }
+
+  Routino_Translation* translation = Routino_GetTranslation(strLanguage.ROUTINO_PATH_ENCODING);
+
+  int options = ROUTINO_ROUTE_LIST_HTML_ALL;
+  if (comboMode->currentIndex() == 0) {
+    options |= ROUTINO_ROUTE_SHORTEST;
+  }
+  if (comboMode->currentIndex() == 1) {
+    options |= ROUTINO_ROUTE_QUICKEST;
+  }
+
+  cancelRequested.store(false);
+  progressValue.store(0);
+
+  auto* dlg = new CProgressDialog(tr("Calculate route with %1").arg(getOptions()), 0, NOINT, this);
+  connect(dlg, &CProgressDialog::rejected, this, []() { cancelRequested.store(true); });
+
+  auto* pollTimer = new QTimer(dlg);
+  connect(pollTimer, &QTimer::timeout, dlg, [dlg]() { dlg->setValueDirect(progressValue.load()); });
+  pollTimer->start(100);
+
+  auto* watcher = new QFutureWatcher<QPair<int, QPolygonF>>(this);
+  connect(watcher, &QFutureWatcher<QPair<int, QPolygonF>>::finished, this, [this, watcher, dlg, callback]() {
+    const auto [count, coords] = watcher->result();
+    watcher->deleteLater();
+    dlg->deleteLater();
+    mutex.unlock();
+    callback(count, coords);
+  });
+
+  // Transfer mutex ownership to the watcher callback before launching the worker.
+  guard.dismiss();
+
+  // Worker thread: only C library calls and the two atomics — no Qt objects.
+  watcher->setFuture(QtConcurrent::run([data, profile, translation, options, p1, p2]() -> QPair<int, QPolygonF> {
+    QPolygonF coords;
+
+    Routino_Waypoint* wps[2] = {};
+    wps[0] = Routino_FindWaypoint(data, profile, p1.y() * RAD_TO_DEG, p1.x() * RAD_TO_DEG);
+    wps[1] = Routino_FindWaypoint(data, profile, p2.y() * RAD_TO_DEG, p2.x() * RAD_TO_DEG);
+    if (!wps[0] || !wps[1]) {
+      return {-1, {}};
+    }
+
+    Routino_Output* route = Routino_CalculateRoute(data, profile, translation, wps, 2, options, ProgressFunc);
+    if (!route) {
+      return {-1, {}};
+    }
+
+    for (Routino_Output* n = route; n; n = n->next) {
+      if (n->type != ROUTINO_POINT_WAYPOINT) {
+        coords << QPointF(n->lon * DEG_TO_RAD, n->lat * DEG_TO_RAD);
+      }
+    }
+    Routino_DeleteRoute(route);
+    return {static_cast<int>(coords.size()), std::move(coords)};
+  }));
 }

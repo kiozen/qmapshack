@@ -39,20 +39,27 @@ void CLineOpDeletePoint::mouseMove(const QPoint& pos) {
 }
 
 void CLineOpDeletePoint::leftClick(const QPoint& pos) {
-  if (idxFocus != NOIDX) {
-    if (idxFocus > 0) {
-      points[idxFocus - 1].subpts.clear();
-    }
-
-    points.remove(idxFocus--);
-    updateLeadLines(idxFocus);
-
-    slotTimeoutRouting();
-
-    // store to undo/redo history
-    parentHandler->storeToHistory(points);
+  if (idxFocus == NOIDX || isRouting) {
+    return;
   }
-  idxFocus = NOIDX;
+
+  if (idxFocus > 0) {
+    points[idxFocus - 1].subpts.clear();
+  }
+
+  points.remove(idxFocus--);  // idxFocus now points at the successor (or last valid)
+  const qint32 routeIdx = idxFocus;
+  updateLeadLines(routeIdx);
+
+  idxFocus = NOIDX;  // hide highlight while routing
+  isRouting = true;
+
+  startRouting(routeIdx, [this]() {
+    isRouting = false;
+    parentHandler->storeToHistory(points);
+    canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
+  });
+
   canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
 }
 

@@ -195,13 +195,19 @@ void CLineOpSelectRange::slotDelete() {
 }
 
 void CLineOpSelectRange::slotCalc() {
-  qint32 idx = qMin(idxFocus, idx2nd);
-  qint32 N = qAbs(idxFocus - idx2nd) - 1;
+  if (isRouting) {
+    return;
+  }
+
+  const qint32 idx = qMin(idxFocus, idx2nd);
+  const qint32 N = qAbs(idxFocus - idx2nd) - 1;
 
   points.remove(idx + 1, N);
 
-  finalizeOperation(idx);
-  parentHandler->storeToHistory(points);
-
-  resetState();
+  isRouting = true;
+  startRouting(idx, [this]() {
+    isRouting = false;
+    parentHandler->storeToHistory(points);
+    resetState();
+  });
 }

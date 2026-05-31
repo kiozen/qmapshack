@@ -20,6 +20,7 @@
 #include "mouse/line/ILineOp.h"
 
 #include <QtWidgets>
+#include <memory>
 
 #include "canvas/CCanvas.h"
 #include "gis/CGisDraw.h"
@@ -171,8 +172,6 @@ void GPS_Math_SubPolyline(const QPointF& pt1, const QPointF& pt2, qint32 thresho
     }
   }
 
-  //    qDebug() << pixel.size() << idx11 << idx12 << idx21 << pt1 << pt2 << pt11 << pt21;
-
   result.idx11 = idx11;
   result.idx12 = idx12;
   result.idx21 = idx21;
@@ -202,8 +201,7 @@ void ILineOp::startDelayedRouting() {
 
 void ILineOp::slotTimeoutRouting() {
   cancelDelayedRouting();
-  finalizeOperation(idxFocus);
-  canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
+  startRouting(idxFocus);
 }
 
 void ILineOp::drawBg(QPainter& p) {
@@ -245,14 +243,13 @@ void ILineOp::mouseMove(const QPoint& pos) { updateLeadLines(idxFocus); }
 
 void ILineOp::leftButtonDown(const QPoint& pos) {
   cancelDelayedRouting();
+  ++routingGeneration;  // discard any in-flight preview routing from mouseMove
   showRoutingErrorMessage(QString());
 }
 
 void ILineOp::scaleChanged() { cancelDelayedRouting(); }
 
 void ILineOp::startMouseMove(const QPointF& point) {
-  //    // as long the mouse is not taken as moving
-  //    // to not trigger on-the-fly-routing
   parentHandler->startMouseMove(point.toPoint());
   cancelDelayedRouting();
 }
@@ -315,73 +312,116 @@ void ILineOp::showRoutingErrorMessage(const QString& msg) const {
   }
 }
 
-void ILineOp::tryRouting(qint32 idx) const {
-  // Copy coords before calcRoute: the router shows a progress dialog that runs an event loop,
-  // during which the user can abort (right-click), causing restoreFromHistory() to reallocate
-  // points and invalidate any references/pointers into it.
-  QPointF coord1 = points[idx].coord;
-  QPointF coord2 = points[idx + 1].coord;
-  QPolygonF subs;
+void ILineOp::startRouting(qint32 focusIdx, std::function<void()> onComplete) {
+  cancelDelayedRouting();
 
-  try {
-    if (CRouterSetup::self().calcRoute(coord1, coord2, subs) >= 0) {
-      // Re-check bounds: if the user aborted during calcRoute's event loop,
-      // points[idx+1] may no longer exist — don't write stale subpoints.
-      if (idx + 1 >= points.size()) {
+  if (focusIdx == NOIDX) {
+    if (onComplete) {
+      onComplete();
+    }
+    return;
+  }
+
+  // Vector / track routing: synchronous, no async needed.
+  if (!parentHandler->useAutoRouting()) {
+    if (parentHandler->useVectorRouting() || parentHandler->useTrackRouting()) {
+      if (focusIdx > 0 && focusIdx < points.size()) {
+        IGisLine::point_t& pt = points[focusIdx - 1];
+        pt.subpts.clear();
+        for (const QPointF& c : std::as_const(subLineCoord1)) {
+          pt.subpts << IGisLine::subpt_t(c);
+        }
+      }
+      if (focusIdx + 1 < points.size()) {
+        IGisLine::point_t& pt = points[focusIdx];
+        pt.subpts.clear();
+        for (const QPointF& c : std::as_const(subLineCoord2)) {
+          pt.subpts << IGisLine::subpt_t(c);
+        }
+      }
+    }
+    if (focusIdx < points.size()) {
+      startMouseMove(points[focusIdx].pixel);
+    }
+    parentHandler->updateStatus();
+    canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
+    if (onComplete) {
+      onComplete();
+    }
+    return;
+  }
+
+  // Auto routing: fire async requests for the (up to two) segments adjacent to focusIdx.
+  // routingGeneration guards against stale callbacks from aborted requests.
+  const qint32 gen = ++routingGeneration;
+
+  struct PendingSegments {
+    int remaining = 0;
+    std::function<void()> onComplete;
+  };
+  auto pending = std::make_shared<PendingSegments>();
+  pending->onComplete = std::move(onComplete);
+
+  // QPointer guards against use-after-free if this ILineOp is destroyed before a callback fires.
+  QPointer<ILineOp> self(this);
+
+  auto routeSegment = [self, gen, pending](qint32 segIdx) {
+    if (segIdx < 0 || segIdx + 1 >= self->points.size()) {
+      return;
+    }
+
+    const QPointF c1 = self->points[segIdx].coord;
+    const QPointF c2 = self->points[segIdx + 1].coord;
+    pending->remaining++;
+
+    CRouterSetup::self().calcRouteAsync(c1, c2, [self, gen, pending, segIdx](int result, QPolygonF subs) {
+      if (!self || gen != self->routingGeneration) {
         return;
       }
-      points[idx].subpts.clear();
-      for (const QPointF& sub : std::as_const(subs)) {
-        points[idx].subpts << IGisLine::subpt_t(sub);
+
+      if (result >= 0 && segIdx + 1 < self->points.size()) {
+        self->points[segIdx].subpts.clear();
+        for (const QPointF& sub : std::as_const(subs)) {
+          self->points[segIdx].subpts << IGisLine::subpt_t(sub);
+        }
+        self->showRoutingErrorMessage(QString());
+      } else if (result < 0) {
+        self->showRoutingErrorMessage(tr("Routing failed."));
       }
-    }
-    showRoutingErrorMessage(QString());
-  } catch (const QString& msg) {
-    showRoutingErrorMessage(msg);
-  }
-  // workaround for canvas losing mouse tracking caused by CProgressDialog being modal:
-  canvas->setMouseTracking(true);
-}
 
-void ILineOp::finalizeOperation(qint32 idx) {
-  if (idx == NOIDX) {
-    return;
-  }
-
-  if (parentHandler->useAutoRouting()) {
-    CCanvasCursorLock cursorLock(Qt::WaitCursor, __func__);
-    if (idx > 0 && idx < points.size()) {
-      tryRouting(idx - 1);
-    }
-    if (idx < (points.size() - 1)) {
-      tryRouting(idx);
-    }
-  } else if (parentHandler->useVectorRouting() || parentHandler->useTrackRouting()) {
-    if (idx > 0) {
-      IGisLine::point_t& pt1 = points[idx - 1];
-      pt1.subpts.clear();
-      for (const QPointF& pt : std::as_const(subLineCoord1)) {
-        pt1.subpts << IGisLine::subpt_t(pt);
+      pending->remaining--;
+      if (pending->remaining == 0) {
+        self->canvas->setMouseTracking(true);
+        if (self->idxFocus >= 0 && self->idxFocus < self->points.size()) {
+          self->startMouseMove(self->points[self->idxFocus].pixel);
+        }
+        self->parentHandler->updateStatus();
+        self->canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
+        if (pending->onComplete) {
+          pending->onComplete();
+        }
       }
-    }
+    });
+  };
 
-    if (idx < (points.size() - 1)) {
-      IGisLine::point_t& pt1 = points[idx];
-      pt1.subpts.clear();
-      for (const QPointF& pt : std::as_const(subLineCoord2)) {
-        pt1.subpts << IGisLine::subpt_t(pt);
-      }
-    }
+  if (focusIdx > 0 && focusIdx < points.size()) {
+    routeSegment(focusIdx - 1);
+  }
+  if (focusIdx + 1 < points.size()) {
+    routeSegment(focusIdx);
   }
 
-  // need to move the mouse away by some pixels to trigger next routing event
-  // idx may be out of bounds if points was modified during calcRoute's event loop (e.g. abort)
-  if (idx >= points.size()) {
-    return;
+  // No segments were queued (e.g. single-point line) — complete immediately.
+  if (pending->remaining == 0) {
+    if (focusIdx < points.size()) {
+      startMouseMove(points[focusIdx].pixel);
+    }
+    parentHandler->updateStatus();
+    canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
+    if (pending->onComplete) {
+      pending->onComplete();
+    }
   }
-  startMouseMove(points[idx].pixel);
-
-  parentHandler->updateStatus();
 }
 
 qint32 ILineOp::isCloseTo(const QPoint& pos) const {

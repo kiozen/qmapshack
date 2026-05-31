@@ -47,8 +47,9 @@ void CLineOpAddPoint::append() {
 
 bool CLineOpAddPoint::abortStep() {
   if (addPoint) {
-    // cancel action and restore last state of line
     cancelDelayedRouting();
+    ++routingGeneration;  // discard any in-flight routing callbacks
+    isRouting = false;
     parentHandler->restoreFromHistory(points);
 
     addPoint = false;
@@ -70,43 +71,47 @@ void CLineOpAddPoint::leftClick(const QPoint& pos) {
     QPointF coord = pos;
     gis->convertPx2Rad(coord);
 
-    // Pin the clicked position before routing: mouseMove during calcRoute's nested
-    // event loop drifts points[idxFocus].coord away from where the user clicked,
-    // causing the endpoint to jump when the route completes (issue #1093).
+    // Fix the draft point at the clicked position. mouseMove is blocked while
+    // isRouting, so the coord won't drift during async routing (issue #1093).
     points[idxFocus].coord = coord;
 
     isRouting = true;
-    slotTimeoutRouting();
-    isRouting = false;
+    const bool capturedIsPoint = isPoint;
+    const qint32 capturedIdx = idxFocus;
 
-    // slotTimeoutRouting runs an event loop; the user may have aborted (right-click or undo)
-    // during it, which sets idxFocus = NOIDX. Bail out if that happened.
-    if (idxFocus == NOIDX || idxFocus >= points.size()) {
-      return;
-    }
+    startRouting(idxFocus, [this, coord, capturedIsPoint, capturedIdx]() {
+      isRouting = false;
 
-    // Restore: mouseMove during the event loop may have drifted the coordinate.
-    points[idxFocus].coord = coord;
-
-    // if isPoint is true the line has been appended/prepended
-    // in this case go on with adding another point
-    if (isPoint) {
-      if (idxFocus == (points.size() - 1)) {
-        idxFocus++;
+      // If abortStep fired during routing, routingGeneration was incremented
+      // and startRouting discarded the callback — we won't reach here. But
+      // check capturedIdx validity as a belt-and-suspenders guard.
+      if (capturedIdx >= points.size()) {
+        canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
+        return;
       }
 
-      // store current state of line to undo/redo history
-      parentHandler->storeToHistory(points);
+      if (capturedIsPoint) {
+        qint32 newIdx = capturedIdx;
+        if (newIdx == (points.size() - 1)) {
+          newIdx++;
+        }
+        idxFocus = newIdx;
 
-      points.insert(idxFocus, IGisLine::point_t(coord));
-    } else {
-      // store current state of line to undo/redo history
-      parentHandler->storeToHistory(points);
-      // terminate operation if the new point was inbetween a line segment.
-      addPoint = false;
-      idxFocus = NOIDX;
-    }
-  } else if (isPoint) {
+        parentHandler->storeToHistory(points);
+        points.insert(idxFocus, IGisLine::point_t(coord));
+      } else {
+        parentHandler->storeToHistory(points);
+        addPoint = false;
+        idxFocus = NOIDX;
+      }
+      canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
+    });
+
+    canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
+    return;
+  }
+
+  if (isPoint) {
     // as isPoint is set, add a new point either at the start or end of the line
     if (idxFocus == (points.size() - 1)) {
       idxFocus++;
@@ -135,7 +140,7 @@ void CLineOpAddPoint::leftClick(const QPoint& pos) {
 
 void CLineOpAddPoint::mouseMove(const QPoint& pos) {
   ILineOp::mouseMove(pos);
-  if (addPoint) {
+  if (addPoint && !isRouting) {
     QPointF coord = pos;
     gis->convertPx2Rad(coord);
 
@@ -152,7 +157,7 @@ void CLineOpAddPoint::mouseMove(const QPoint& pos) {
 
     // retrigger delayed routing
     startDelayedRouting();
-  } else {
+  } else if (!isRouting) {
     isPoint = false;
     // find line segment close to cursor
     idxFocus = isCloseToLine(pos);

@@ -46,6 +46,7 @@ class CProgressDialog : public QDialog, private Ui::IProgressDialog {
   static void setAllVisible(bool yes);
 
   void setValue(int val);
+  void setValueDirect(int val);
 
   bool wasCanceled();
 

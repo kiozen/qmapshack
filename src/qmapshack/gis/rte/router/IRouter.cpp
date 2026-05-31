@@ -18,6 +18,14 @@
 
 #include "gis/rte/router/IRouter.h"
 
+#include <QtWidgets>
+
 IRouter::IRouter(bool fastRouting, QWidget* parent) : QWidget(parent), fastRouting(fastRouting) {}
 
 IRouter::~IRouter() {}
+
+void IRouter::calcRouteAsync(const QPointF& p1, const QPointF& p2, RouteCallback callback) {
+  QPolygonF coords;
+  int result = calcRoute(p1, p2, coords);
+  QTimer::singleShot(0, this, [callback, result, coords]() { callback(result, coords); });
+}

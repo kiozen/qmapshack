@@ -85,6 +85,13 @@ int CRouterSetup::calcRoute(const QPointF& p1, const QPointF& p2, QPolygonF& coo
   return false;
 }
 
+void CRouterSetup::calcRouteAsync(const QPointF& p1, const QPointF& p2, RouteCallback callback) {
+  IRouter* router = dynamic_cast<IRouter*>(stackedWidget->currentWidget());
+  if (router) {
+    router->calcRouteAsync(p1, p2, std::move(callback));
+  }
+}
+
 QString CRouterSetup::getOptions() {
   IRouter* router = dynamic_cast<IRouter*>(stackedWidget->currentWidget());
   if (router) {

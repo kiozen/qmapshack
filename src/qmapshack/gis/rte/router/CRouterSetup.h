@@ -22,6 +22,7 @@
 #include <QWidget>
 
 #include "gis/IGisItem.h"
+#include "gis/rte/router/IRouter.h"
 #include "ui_IRouterSetup.h"
 
 class CRouterSetup : public QWidget, private Ui::IRouterSetup {
@@ -32,6 +33,7 @@ class CRouterSetup : public QWidget, private Ui::IRouterSetup {
 
   void calcRoute(const IGisItem::key_t& key);
   int calcRoute(const QPointF& p1, const QPointF& p2, QPolygonF& coords, qreal* costs = nullptr);
+  void calcRouteAsync(const QPointF& p1, const QPointF& p2, RouteCallback callback);
   QString getOptions();
 
   bool hasFastRouting();
@@ -41,7 +43,7 @@ class CRouterSetup : public QWidget, private Ui::IRouterSetup {
   void setRouterTitle(router_e, QString title);
 
  signals:
-  void sigHasFastRouting (bool on);
+  void sigHasFastRouting(bool on);
 
  private slots:
   void slotSelectRouter(int i);

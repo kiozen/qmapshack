@@ -20,8 +20,13 @@
 #define IROUTER_H
 
 #include <QWidget>
+#include <functional>
 
 #include "gis/IGisItem.h"
+
+// Callback invoked on the main thread when an async segment route completes.
+// result >= 0: success (number of coords); result < 0: failure or cancellation.
+using RouteCallback = std::function<void(int result, QPolygonF coords)>;
 
 class IRouter : public QWidget {
   Q_OBJECT
@@ -31,6 +36,11 @@ class IRouter : public QWidget {
 
   virtual void calcRoute(const IGisItem::key_t& key) = 0;
   virtual int calcRoute(const QPointF& p1, const QPointF& p2, QPolygonF& coords, qreal* costs = nullptr) = 0;
+
+  // Async variant used by ILineOp for segment routing. Calls callback on the
+  // main thread when done. Default implementation falls back to the sync path.
+  virtual void calcRouteAsync(const QPointF& p1, const QPointF& p2, RouteCallback callback);
+
   virtual bool hasFastRouting() { return fastRouting; }
 
   virtual QString getOptions() = 0;

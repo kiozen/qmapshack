@@ -25,6 +25,7 @@
 #include <QObject>
 #include <QPen>
 #include <QRect>
+#include <functional>
 
 #include "gis/IGisLine.h"
 
@@ -71,7 +72,12 @@ class ILineOp : public QObject {
  protected:
   virtual void cancelDelayedRouting();
   virtual void startDelayedRouting();
-  virtual void finalizeOperation(qint32 idx);
+
+  // Start async routing for the two segments adjacent to focusIdx.
+  // onComplete is called on the main thread after all segments finish.
+  // Pass nullptr / omit for live-preview routing triggered by mouse move.
+  void startRouting(qint32 focusIdx, std::function<void()> onComplete = nullptr);
+
   qint32 isCloseTo(const QPoint& pos) const;
   qint32 isCloseToLine(const QPoint& pos) const;
 
@@ -110,11 +116,16 @@ class ILineOp : public QObject {
   QPolygonF subLinePixel1;
   QPolygonF subLinePixel2;
 
+  // Guards against re-entrant leftClick during routing (still useful for the
+  // non-auto-routing synchronous path) and blocks mouseMove coord updates.
   bool isRouting = false;
 
- private:
-  void tryRouting(qint32 idx) const;
+  // Incremented whenever a new routing request is started or cancelled.
+  // Callbacks compare their captured generation against this value; a mismatch
+  // means the request is stale and the result should be discarded.
+  qint32 routingGeneration = 0;
 
+ private:
   QTimer* timerRouting;
   QTime buttonPressTime;
 

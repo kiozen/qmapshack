@@ -22,6 +22,7 @@
 #include <routino.h>
 
 #include <QPoint>
+#include <atomic>
 
 #include "gis/rte/router/IRouter.h"
 #include "ui_IRouterRoutino.h"
@@ -36,12 +37,16 @@ class CRouterRoutino : public IRouter, private Ui::IRouterRoutino {
 
   void calcRoute(const IGisItem::key_t& key) override;
   int calcRoute(const QPointF& p1, const QPointF& p2, QPolygonF& coords, qreal* costs) override;
+  void calcRouteAsync(const QPointF& p1, const QPointF& p2, RouteCallback callback) override;
 
   bool hasFastRouting() override;
 
   QString getOptions() override;
 
-  static QPointer<CProgressDialog> progress;
+  // Written by ProgressFunc (worker thread), read by main-thread poll timer.
+  static std::atomic<int> progressValue;
+  // Set by progress dialog reject (main thread), read by ProgressFunc (worker thread).
+  static std::atomic<bool> cancelRequested;
 
   void setupPath(const QString& path);
 

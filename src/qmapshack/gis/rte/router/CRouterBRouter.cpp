@@ -297,6 +297,84 @@ int CRouterBRouter::calcRoute(const QPointF& p1, const QPointF& p2, QPolygonF& c
   }
 }
 
+void CRouterBRouter::calcRouteAsync(const QPointF& p1, const QPointF& p2, RouteCallback callback) {
+  if (!hasFastRouting()) {
+    QTimer::singleShot(0, this, [callback]() { callback(-1, {}); });
+    return;
+  }
+
+  if (!mutex.tryLock()) {
+    QTimer::singleShot(0, this, [callback]() { callback(-1, {}); });
+    return;
+  }
+
+  if (setup->installMode == CRouterBRouterSetup::eModeLocal && localBRouter->isBRouterNotRunning()) {
+    localBRouter->startBRouter();
+  }
+
+  const QVector<QPointF> routePoints = {p1 * RAD_TO_DEG, p2 * RAD_TO_DEG};
+  QList<IGisItem*> nogos;
+  CGisWorkspace::self().getNogoAreas(nogos);
+
+  QNetworkReply* reply = networkAccessManager->get(getRequest(routePoints, nogos));
+
+  auto* dlg = new CProgressDialog(tr("Calculate route with %1").arg(getOptions()), 0, NOINT, this);
+  connect(dlg, &CProgressDialog::rejected, reply, &QNetworkReply::abort);
+
+  connect(reply, &QNetworkReply::finished, this, [this, reply, dlg, callback]() {
+    dlg->deleteLater();
+
+    QPolygonF coords;
+    int result = -1;
+
+    const QNetworkReply::NetworkError netErr = reply->error();
+    if (netErr == QNetworkReply::OperationCanceledError) {
+      // user cancelled — not an error
+    } else if (netErr != QNetworkReply::NoError) {
+      slotDisplayError(tr("Calculate route failed."), reply->errorString());
+    } else {
+      try {
+        const QByteArray res = reply->readAll();
+        if (res.isEmpty()) {
+          throw tr("response is empty");
+        }
+
+        QDomDocument xml;
+        const auto xmlRes = xml.setContent(res);
+        if (!xmlRes) {
+          throw tr("Failed to parse BRouter response (line %1): %2").arg(xmlRes.errorLine).arg(xmlRes.errorMessage);
+        }
+
+        const QDomElement xmlGpx = xml.documentElement();
+        if (xmlGpx.isNull() || xmlGpx.tagName() != "gpx") {
+          throw QString(res.data());
+        }
+
+        setup->parseBRouterVersion(xmlGpx.attribute("creator"));
+
+        const QDomNodeList xmlLatLng =
+            xmlGpx.firstChildElement("trk").firstChildElement("trkseg").elementsByTagName("trkpt");
+        for (int n = 0; n < xmlLatLng.size(); n++) {
+          const QDomElement elem = xmlLatLng.item(n).toElement();
+          coords << QPointF(elem.attribute("lon").toDouble() * DEG_TO_RAD,
+                            elem.attribute("lat").toDouble() * DEG_TO_RAD);
+        }
+        result = coords.size();
+        slotClearError();
+      } catch (const QString& msg) {
+        coords.clear();
+        if (!msg.isEmpty()) {
+          slotDisplayError(tr("Calculate route failed."), msg);
+        }
+      }
+    }
+
+    reply->deleteLater();
+    mutex.unlock();
+    callback(result, coords);
+  });
+}
+
 int CRouterBRouter::synchronousRequest(const QVector<QPointF>& points, const QList<IGisItem*>& nogos, QPolygonF& coords,
                                        qreal* costs) {
   if (!mutex.tryLock()) {
@@ -444,8 +522,7 @@ void CRouterBRouter::calcRoute(const IGisItem::key_t& key) {
     const QNetworkReply::NetworkError& netErr = reply->error();
     if (netErr == QNetworkReply::OperationCanceledError) {
       return;  // user cancelled via progress dialog — not an error
-    } else if (netErr == QNetworkReply::RemoteHostClosedError && nogos.size() > 1 &&
-               !isMinimumVersion(1, 4, 10)) {
+    } else if (netErr == QNetworkReply::RemoteHostClosedError && nogos.size() > 1 && !isMinimumVersion(1, 4, 10)) {
       throw tr("this version of BRouter does not support more than 1 nogo-area");
     } else if (netErr != QNetworkReply::NoError) {
       throw reply->errorString();

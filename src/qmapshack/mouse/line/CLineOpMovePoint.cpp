@@ -39,26 +39,29 @@ void CLineOpMovePoint::leftClick(const QPoint& pos) {
       return;
     }
 
-    // Pin the drop position before routing: mouseMove during calcRoute's nested
-    // event loop drifts points[idxFocus].coord, storing the wrong position.
     QPointF coord = pos;
     gis->convertPx2Rad(coord);
+
+    // Fix the drop position and stop mouseMove from updating it during routing.
     points[idxFocus].coord = coord;
-
-    isRouting = true;
-    slotTimeoutRouting();
-    isRouting = false;
-
+    const qint32 capturedIdx = idxFocus;
     movePoint = false;
+    isRouting = true;
 
-    if (idxFocus == NOIDX || idxFocus >= points.size()) {
-      return;
-    }
+    startRouting(idxFocus, [this, coord, capturedIdx]() {
+      isRouting = false;
 
-    // Restore: mouseMove during the event loop may have drifted the coordinate.
-    points[idxFocus].coord = coord;
+      if (capturedIdx >= points.size()) {
+        canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
+        return;
+      }
 
-    parentHandler->storeToHistory(points);
+      points[capturedIdx].coord = coord;
+      parentHandler->storeToHistory(points);
+      canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
+    });
+
+    canvas->slotTriggerCompleteUpdate(CCanvas::eRedrawMouse);
   } else if (idxFocus != NOIDX) {
     QPointF coord = pos;
     gis->convertPx2Rad(coord);
@@ -87,8 +90,9 @@ void CLineOpMovePoint::rightButtonDown(const QPoint& pos) {
 
 bool CLineOpMovePoint::abortStep() {
   if (movePoint) {
-    // cancel action and restore last state of line
     cancelDelayedRouting();
+    ++routingGeneration;  // discard any in-flight routing callbacks
+    isRouting = false;
     parentHandler->restoreFromHistory(points);
 
     movePoint = false;
@@ -104,7 +108,7 @@ bool CLineOpMovePoint::abortStep() {
 void CLineOpMovePoint::mouseMove(const QPoint& pos) {
   ILineOp::mouseMove(pos);
 
-  if (movePoint) {
+  if (movePoint && !isRouting) {
     QPointF coord = pos;
     gis->convertPx2Rad(coord);
 
@@ -122,7 +126,7 @@ void CLineOpMovePoint::mouseMove(const QPoint& pos) {
 
     // retrigger delayed routing
     startDelayedRouting();
-  } else {
+  } else if (!isRouting) {
     // no point selected yet, find point to highlight
     idxFocus = isCloseTo(pos);
   }
