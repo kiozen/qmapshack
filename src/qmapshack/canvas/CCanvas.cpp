@@ -1193,6 +1193,8 @@ void CCanvas::setZoom(bool in, redraw_e& needsRedraw) {
   emit sigMoveAndZoom(map->zoom(), posFocus);
 }
 
+int CCanvas::getZoomIndex() const { return map->zoom(); }
+
 void CCanvas::zoom(int index) {
   if (map->zoom() == index) {
     return;

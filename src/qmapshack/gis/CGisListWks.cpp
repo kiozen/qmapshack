@@ -95,6 +95,13 @@ class CGisListWksEditLock {
   bool waitCursor;
 };
 
+namespace {
+/// Empty unless setDatabasePath() overrode it; see the header.
+QString databasePathOverride;
+}  // namespace
+
+void CGisListWks::setDatabasePath(const QString& path) { databasePathOverride = path; }
+
 CGisListWks::CGisListWks(QWidget* parent) : QTreeWidget(parent) {
   CWksItemDelegate* delegate = new CWksItemDelegate(this);
   connect(delegate, &CWksItemDelegate::sigUpdateCanvas, this, &CGisListWks::sigChanged);
@@ -104,7 +111,9 @@ CGisListWks::CGisListWks(QWidget* parent) : QTreeWidget(parent) {
   header()->setSectionResizeMode(0, QHeaderView::Stretch);
 
   db = QSqlDatabase::addDatabase("QSQLITE", "Workspace1");
-  QString config = QDir(IAppSetup::getPlatformInstance()->userDataPath()).filePath("workspace.db");
+  const QString& config = databasePathOverride.isEmpty()
+                              ? QDir(IAppSetup::getPlatformInstance()->userDataPath()).filePath("workspace.db")
+                              : databasePathOverride;
   db.setDatabaseName(config);
   db.open();
   configDB();
@@ -1005,6 +1014,11 @@ void CGisListWks::showMenuItemTrk(const QPoint& p, const IGisItem::key_t& key) {
   CGisWorkspace::self().slotWksItemSelectionReset();
 
   QMenu menu(this);
+  buildMenuItemTrk(menu, key);
+  menu.exec(p);
+}
+
+void CGisListWks::buildMenuItemTrk(QMenu& menu, const IGisItem::key_t& key) {
   menu.addAction(actionEditDetails);
   menu.addAction(actionTagItem);
   menu.addAction(actionCopyItem);
@@ -1023,7 +1037,6 @@ void CGisListWks::showMenuItemTrk(const QPoint& p, const IGisItem::key_t& key) {
   menu.addAction(actionNogoTrk);
   menu.addSeparator();
   menu.addAction(actionDelete);
-  menu.exec(p);
 }
 
 void CGisListWks::showMenuItemWpt(const QPoint& p, CGisItemWpt* wpt) {

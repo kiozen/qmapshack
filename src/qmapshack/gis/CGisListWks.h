@@ -51,7 +51,24 @@ class CGisListWks : public QTreeWidget {
 
   bool event(QEvent* e) override;
 
+  /**
+     @brief Use another workspace database than the user's own.
+
+     Must be called before CMainWindow is constructed. Documentation and shoot runs need their own,
+     or the writer's open projects end up in every image.
+   */
+  static void setDatabasePath(const QString& path);
+
   void addProject(IGisProject* proj);
+
+  /**
+     @brief Fill a menu with the actions of a track.
+
+     Split out of showMenuItemTrk() so the menu can be built without being exec()'d. exec() is a
+     nested event loop waiting for a click, which never arrives when the application is driven
+     programmatically.
+   */
+  void buildMenuItemTrk(QMenu& menu, const IGisItem::key_t& key);
 
   void removeDevice(const QString& key);
 
