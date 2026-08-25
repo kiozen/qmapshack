@@ -19,18 +19,31 @@
 #include <QNetworkProxyFactory>
 #include <QtPlugin>
 #include <QtWidgets>
+#include <optional>
 
 #include "CMainWindow.h"
 #include "CSingleInstanceProxy.h"
+#include "gis/CGisListWks.h"
 #include "helpers/CSettings.h"
+#include "map/CMapDraw.h"
 #include "setup/CAppOpts.h"
 #include "setup/IAppSetup.h"
+#include "shoot/CShotDocMode.h"
+#include "shoot/CShotRunner.h"
 #include "theme/CQmsStyle.h"
 #include "theme/CUiTheme.h"
 #include "version.h"
 
 // Link in the static ".svgt" icon engine. See svgticon/CSvgtIconEnginePlugin.h.
 Q_IMPORT_PLUGIN(CSvgtIconEnginePlugin)
+
+namespace {
+/// @brief A workspace database of its own, so a run never reads or writes the user's open projects
+QString scratchWorkspace(const QString& dir, const QString& name) {
+  QDir(dir).mkpath(".");
+  return QDir(dir).absoluteFilePath(name + "-workspace.db");
+}
+}  // namespace
 
 int main(int argc, char** argv) {
   // preserve "original" argument list
@@ -76,11 +89,38 @@ int main(int argc, char** argv) {
   // setup default proxy
   QNetworkProxyFactory::setUseSystemConfiguration(true);
 
-  // make sure this is the one and only instance on the system
-  CSingleInstanceProxy s(qlOpts->arguments);
+  const bool shooting = !qlOpts->shootDir.isEmpty();
+  const bool documenting = !qlOpts->docDir.isEmpty();
+
+  if (shooting) {
+    // CDiskCache::cleanupRemovedMaps() deletes the cache directory of every map the current
+    // configuration does not know about, so a shoot run reading a scratch config would wipe the
+    // user's real tile cache. Point the cache root somewhere harmless before anything reads it.
+    CMapDraw::setCacheRoot(QDir(qlOpts->shootDir).absoluteFilePath("_cache"));
+    // Named after the chapter, so two chapters never share one.
+    const QString& chapter = QFileInfo(qlOpts->shootTarget).completeBaseName();
+    CGisListWks::setDatabasePath(
+        scratchWorkspace(QDir(qlOpts->shootDir).absoluteFilePath("_cache"), chapter.isEmpty() ? "shoot" : chapter));
+  }
+
+  if (documenting) {
+    // Same reason as the shoot run: documentation mode reads a scratch configuration that knows no
+    // maps, and loading the map list would then prune the user's tile cache.
+    CMapDraw::setCacheRoot(QDir(qlOpts->docDir).absoluteFilePath("doc/shots/_cache"));
+    CGisListWks::setDatabasePath(
+        scratchWorkspace(QDir(qlOpts->docDir).absoluteFilePath("doc/shots/_cache"), qlOpts->docChapter));
+  }
+
+  // CSingleInstanceProxy hands the arguments to an already running QMapShack and exits, which would
+  // make a shoot or documentation run fail for a reason that has nothing to do with the
+  // documentation. It has to outlive the window, so it stays a scoped object.
+  std::optional<CSingleInstanceProxy> singleInstance;
+  if (!shooting && !documenting) {
+    singleInstance.emplace(qlOpts->arguments);
+  }
 
   QPointer<QSplashScreen> splash = nullptr;
-  if (!qlOpts->nosplash) {
+  if (!qlOpts->nosplash && !shooting && !documenting) {
     QPixmap pic(":/pics/splash.png");
     QPainter p(&pic);
     QFont f = p.font();
@@ -103,6 +143,21 @@ int main(int argc, char** argv) {
 
   CMainWindow w;
   w.show();
+
+  if (shooting) {
+    // Queued, never inline: the main window defers part of its own initialization by a timer and
+    // the canvases start their draw threads asynchronously.
+    CShotRunner* runner = new CShotRunner(CShotRunner::taskFromName(qlOpts->shootTask), QDir(qlOpts->shootDir),
+                                          qlOpts->shootOnly, qlOpts->shootTarget, qlOpts->shootScenario, &w);
+    runner->start();
+    app.exec();
+    return runner->failures();
+  }
+
+  if (documenting) {
+    CShotDocMode* doc = new CShotDocMode(QDir(qlOpts->docDir), qlOpts->docChapter, &w);
+    doc->start();
+  }
 
   if (nullptr != splash) {
     QTimer::singleShot(1500, splash, [splash, &w]() {

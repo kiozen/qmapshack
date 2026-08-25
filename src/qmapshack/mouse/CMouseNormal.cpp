@@ -225,6 +225,18 @@ bool CMouseNormal::setScreenOption(const QPoint& pt, IGisItem* item) {
   return !screenItemOption.isNull();
 }
 
+bool CMouseNormal::showScreenOption(const QPoint& pt, IGisItem* item) {
+  if (nullptr == item || !setScreenOption(pt, item)) {
+    return false;
+  }
+  // The state draw() paints the bubble in.
+  stateItemSel = eStateShowItemOptions;
+  canvas->update();
+  return true;
+}
+
+void CMouseNormal::clearScreenOption() { resetState(); }
+
 void CMouseNormal::draw(QPainter& p, CCanvas::redraw_e needsRedraw, const QRect& rect) {
   // no mouse interaction while gis thread is running
   if (gis->isRunning()) {
@@ -389,7 +401,8 @@ void CMouseNormal::showContextMenu(const QPoint& point) {
   menu.addSeparator();
   menu.addMenu(CGeoSearchWeb::self().getMenu(pt * RAD_TO_DEG, &menu));
   menu.addAction(QIcon("://icons/CopyPosition.svgt"), tr("Copy position"), this, &CMouseNormal::slotCopyPosition);
-  menu.addAction(QIcon("://icons/CopyGrid.svgt"), tr("Copy position (Grid)"), this, &CMouseNormal::slotCopyPositionGrid);
+  menu.addAction(QIcon("://icons/CopyGrid.svgt"), tr("Copy position (Grid)"), this,
+                 &CMouseNormal::slotCopyPositionGrid);
 
   QPoint p = canvas->mapToGlobal(point);
   menu.exec(p);

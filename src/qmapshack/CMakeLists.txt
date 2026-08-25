@@ -317,6 +317,16 @@ set( SRCS
     setup/CCommandProcessor.cpp
     setup/CLogHandler.cpp
     setup/IAppSetup.cpp
+    shoot/CShotChapter.cpp
+    shoot/CShotContext.cpp
+    shoot/CShotDocMode.cpp
+    shoot/CShotDocPanel.cpp
+    shoot/CShotExposures.cpp
+    shoot/CShotFixture.cpp
+    shoot/CShotRecorder.cpp
+    shoot/CShotRegistry.cpp
+    shoot/CShotRunner.cpp
+    shoot/CShotWriter.cpp
     tool/CImportDatabase.cpp
     tool/CMapVrtBuilder.cpp
     tool/CRoutinoDatabaseBuilder.cpp

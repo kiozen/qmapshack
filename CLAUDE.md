@@ -36,8 +36,20 @@ src/
 ## Working rules
 
 - **Never build.** No `cmake --build`, `ninja` or `make` — not even to verify an edit. Make the
-  change, run `clang-format`, report, stop. If a compile is genuinely needed to be sure, say so.
-  For reference, the user runs `cmake --build build --target qmapshack -j$(nproc)`.
+  change, run `clang-format`, report, stop. For reference, the user runs
+  `cmake --build build --target qmapshack -j$(nproc)`.
+- **Run it before reporting it.** The build is the user's, but verifying is not: run
+  `build/bin/qmapshack` headlessly through `doc/tools/shots.py` (`chapter`, `build`, `list`) with
+  `-o <scratch>` so nothing in the tree is touched, read the images it produced, and check the JSON
+  and INI files a feature wrote. A claim that something works names the command that showed it. If
+  nothing was run, say so and name the check that would settle it.
+- **Syntax-check what you changed before saying it is done.** `.notes/syntax-check.sh <file.cpp>...`
+  runs `c++ -fsyntax-only` with the flags the build uses: no object file, no linking, nothing
+  written, and it catches the shadowing and stale-identifier mistakes that otherwise reach the user
+  as a failed build. Not a substitute for the build — moc, AUTOUIC and linking are not covered. It
+  reads the Qt prefix out of `build/CMakeCache.txt`, because checking against whatever Qt the system
+  ships reports everything newer than that as missing — `QStyleHints::setColorScheme` and
+  `QPalette::Accent` both came back as non-existent while it pointed at the distribution's Qt 6.4.
 - **Never commit or push** without being asked for that specific change.
 - **No `Co-Authored-By` lines** in commit messages.
 - For "what were we working on", read `git status && git diff` first — the live diff is ground
@@ -63,6 +75,11 @@ Target-scoped CMake. Nothing is set at directory scope except the MSVC options b
   `.qm` from a filesystem path, so nothing reads it, but `qt_add_resources(<app> ...)` is what makes
   the `.qm` files inputs of the *application* target. Drop it and `--target qmapshack` stops
   producing the catalogs the packaging scripts copy out of `<build>/src/<app>/`.
+- **The `.qm` catalogs are unreachable in a build tree.** `prepareTranslator()` resolves a filesystem
+  path only (`<appdir>/../share/qmapshack/translations` on Linux), which exists after `install`, so an
+  uninstalled run is always English. All nine catalogs *are* in the binary under `:/locale` — verify
+  with `strings -a -e l build/bin/qmapshack | grep qmapshack_de.qm`. A `:/locale` fallback in
+  `prepareTranslator()` is what would make an uninstalled run translatable.
 - **`qms_options`** is the INTERFACE target carrying the project's warning set. First-party targets
   link it `PRIVATE`; bundled 3rdparty must not. Add flags through `qms_add_flag_if_supported()`.
 - **`target_link_libraries` is keyword form everywhere.** Plain and keyword signatures cannot be
@@ -304,6 +321,11 @@ Do not re-add a `setIcon(const QPixmap&)` overload on `IDBItem`.
 `CUiTheme` (`src/common/theme/`) is the only source of status colours for rich text, label
 stylesheets and `setTextColor()`. Roles `Neutral/Ok/Warn/Error/Info/Code`, each a fixed light/dark
 pair. Tune there, never per site.
+
+`CUiTheme::pinColorScheme(bool)` is the other way in: it replaces the application palette outright
+so a run's output cannot depend on the desktop's scheme. Not a scope like `CForceLight`, not
+undoable, and once only, before the first window — see the documentation-run notes under *Open
+work*.
 
 ### Choosing the entry point
 
@@ -648,6 +670,26 @@ the SVG at size rather than wrap the old 32px PNG.
 
 ---
 
+## Tile cache
+
+`CDiskCache::cleanupRemovedMaps()`, reached from `CMapDraw::loadMapList()`, **deletes the cache
+directory of every map the current configuration does not know about**. `--config <fresh ini>` does
+not isolate it — `defaultCachePath()` is `~/.QMapShack` regardless — so any headless or scripted run
+must call `CMapDraw::setCacheRoot()` before the first map list load or it destroys the user's tile
+cache.
+
+### The map list outlives its `CMapDraw`
+
+`CMapDraw`'s constructor parents `mapList` to the canvas but disposes of it with
+`connect(canvas, &CCanvas::destroyed, mapList, &CMapList::deleteLater)`, while `CMapDraw` itself is
+a child of the canvas and dies with it. So between the canvas going away and the next event loop
+turn, every `CMapItem` is alive with a dangling `CMapDraw* map`. Anything a `CMapItem` queues must
+therefore watch its owner, not only itself — `loadConfig()`'s 100 ms deferred activation carries a
+`QPointer<CMapDraw>` for exactly this. A canvas that lives less than that delay, such as the one
+`CPrintDialog` builds, hits it.
+
+---
+
 ## Dock widgets
 
 `QDockWidget::setFeatures()` disables `toggleViewAction()` unless `DockWidgetClosable` is in the set,
@@ -938,6 +980,85 @@ file.
 - `waypoint-icon-resolution-plan.md` — 32 → 96 px waypoint icons, gated on storing `icon_t::focus`
   relative.
 
+`QMS-1217-screenshot-framework-plan.md` (documentation images) is implemented on branch
+`QMS-1217_demo` as a **throwaway demo** and describes what is built. §7 is the design, §8 what is
+missing. `shots.py doc <chapter>` is the writer's session, `shots.py chapter|build` the headless
+replay. Everything but the exposure catalog is data:
+
+```
+doc/pages/<chapter>.md            what says a picture exists - the only source of shot names
+doc/shots/<chapter>.json          the shots and the recorded scenarios
+doc/shots/<chapter>/<name>.ini    one scenario's whole configuration
+doc/shots/fixture/shots.ini       the base a chapter opens on
+```
+
+- **A scenario is recorded, not registered.** `CShotRecorder` diffs the application on each mouse
+  release and stores meaning - a name path, a geographic point, a driven value - plus `layout` and
+  `view` (the centre and the zoom level, never a rectangle: `zoomTo()` snaps and everything on the
+  map moves) taken whole at Stop. `IShotRecipe` and `RecipesChapter.cpp` are gone; `SHOT_EXPOSE` stays.
+- **`(base)` is a row, not a scenario.** A shot taken in it has no `scenario` key, and
+  `--shoot-scenario -` is how a build asks for that group. Nothing stores it, so it cannot go stale.
+- **A scenario's `.ini` is a whole configuration, never a patch**, and the base is a starting point,
+  not a layer under it - otherwise restoring a base would move pictures already taken. Settings are
+  read in constructors, so `shots.py` runs **one process per scenario**.
+- **What the tool owns is injected per run, never stored**: `Canvas/{mapPath,demPaths,poiPaths}` from
+  `doc/shots/fixture/`, and `Database/saveOnExit=false` - without it a run saves its workspace and
+  the next one loads the demo project again.
+- **Losing or changing a shot's scenario reduces the entry to its bare `id` and deletes the image**:
+  a widget address and a rectangle frame something else in another state.
+
+A `--shoot` or `--doc` run must set `CMapDraw::setCacheRoot()` and `CGisListWks::setDatabasePath()`
+before `CMainWindow` is constructed, or it prunes the user's tile cache and empties their
+workspace.
+
+**Qt splits the `-platform` string on `:`,** so `offscreen:configfile=C:\...` arrives as
+`configfile=C` plus a second argument, and a config file the plugin cannot open is a `qFatal`, not
+a warning — a Windows run died with exit `3221226505` on every task but `doc`. `shots.py` runs the
+process in its scratch directory and names the screen file relatively; everything else it hands
+over is absolute.
+
+**The offscreen platform has no font database on Windows.** It uses `QFreeTypeFontDatabase`, which
+populates from `QLibraryInfo::LibrariesPath + "/fonts"` — a directory Qt no longer ships — so a
+headless run there had no font at all and drew every glyph as an empty box. `src/fonts/` is
+bundled in `resources.qrc` and registered by `IAppSetup::processArguments()` for `--shoot` and
+`--doc` only. `--font-family` names a family; it cannot supply one.
+
+**A picture is rendered at a device pixel ratio of 1, never `QWidget::grab()`.** `grab()` uses the
+widget's own ratio, so a HiDPI writer accepted pictures twice the size the build produced. Qt 6
+cannot put a real screen back to 1 — `CShotWriter` takes the ratio out of the paint device instead.
+Exact for a dialog, a menu or a docker; a canvas is the exception, because `IDrawContext` sizes its
+buffers by the widget's ratio, so a HiDPI writer's map lands downscaled — same size and layout,
+resampled tiles.
+
+**An opaque picture must not carry an alpha channel.** `grab()` gives one only to a widget that
+does not paint its whole rect; rendering into an `ARGB32` image gives one to everything, which cost
+a third of every PNG for pixels that were all opaque. `renderAtDpr1()` scans the result and
+converts to `RGB32` when nothing used the alpha. Image weight is not cosmetic — every picture ships
+inside the `.qch` that every user downloads.
+
+**`(base)` is a state, so it has to be restorable.** `CShotDocMode` captures the arrangement and
+the view once the fixture is up and replays that for the base row; selecting it used to fall into
+`"This chapter has no scenario called %1"` with an empty `%1`. Nothing about the base is stored —
+that is the point of it.
+
+**A documentation run pins the colour scheme, it does not follow the desktop.**
+`--color-scheme light|dark` → `CUiTheme::pinColorScheme()`, which sets *both* the style hint and
+the application palette. Neither alone is enough: `QPlatformTheme::requestColorScheme()` has an
+empty default implementation, so `QStyleHints::setColorScheme()` does nothing on X11, and
+`QStyle::standardPalette()` reads the platform theme's scheme — the thing being pinned away. The
+palette is the one that matters here, because `paletteIsDark()` reads it and `CUiTheme`,
+`CQmsStyle` and the `.svgt` icon engine all follow from that.
+
+**The documentation panel must not be `WindowStaysOnTopHint`.** It floated above the modal dialogs
+the main window opens too, and one centred under it could be neither reached, closed nor moved out
+from under — the application had to be killed. A parented `Qt::Tool` already floats above its own
+window.
+
+**Every comma in a `SHOT_EXPOSE` lambda must sit inside parentheses.** Only parens
+protect a macro argument — a brace list (`x = {1, 2}`) or a template argument (`f<T, 1>()`) at
+statement level splits the lambda into extra arguments and the error points at the closing `});`.
+Put such a value in a helper function in the anonymous namespace and call it.
+
 ### CMake — remaining
 
 - Retire the platform blocks: the hardcoded `C:\...` cache defaults and the macOS
@@ -951,47 +1072,6 @@ file.
   `-framework` entries in `CMAKE_C_FLAGS` and the three framework include dirs; Windows
   qmt_map2jnx's `Win32/` include dir. `msvc_64/cmake/{FindGDAL,FindPROJ,FindJPEG}.cmake` can go if
   the gisinternals GDAL ships `GDALConfig.cmake`.
-
-### QMS-1156 — convert non-UTF-8 VRT files to UTF-8 on load
-
-GDAL receives filenames as UTF-8 everywhere. A guard rejects `.vrt` files whose bytes aren't valid
-UTF-8, which dead-ends users with legacy Windows-1252/Latin-1 VRTs. Offer a confirmed, `.bak`-backed
-one-click conversion instead.
-
-GDAL facts behind the design (tested on 3.12):
-- The CPL XML parser **ignores the VRT `<?xml encoding?>` declaration** — `<SourceFilename>` bytes go
-  to `open()` verbatim, so even a correctly-declared `ISO-8859-1` VRT fails. Only raw bytes matter,
-  so a byte-level UTF-8 check has no false-rejection risk.
-- On-disk source names are UTF-8, so transcoding a Latin-1 VRT reproduces the real names.
-- GDAL does not hard-fail a bad path: exit 0, checksum -1, `ERROR 4` on stderr — a quietly broken
-  dataset, which is what feeds the missing-file advisory.
-
-Design: transcode from candidate encodings (Windows-1252 → ISO-8859-1 → system ANSI), then **verify
-by resolution** — every `<SourceFilename>` must now exist on disk. First candidate that resolves all
-sources wins, else fall back to plain rejection. Trigger at load time in `CMapVRT`/`CDemVRT`
-construction (a non-UTF-8 VRT never constructs, so the advisory dialog cannot be the entry point),
-reusing the advisory `.bak`/rewrite scaffolding. Not platform-gated — it reproduces on Linux. Also
-rewrite the `<?xml encoding?>` declaration to UTF-8.
-
-### POI icons (SJJB) can be converted to SVG
-
-POIs are not waypoints — no canvas freeze applies. 303 SVGs already ship under
-`src/icons/poi/SJJB/svg/<category>/` and 249 of the 250 referenced PNGs have a counterpart, but none
-are in `resources.qrc`. They are SJJB templates carrying a placeholder fill `#111111` that their
-build recolours per category, so the colour must be recovered per icon from the shipped PNGs
-(16 categories, 6 with 2–3 variants).
-
-Work: register ~250 SVGs, add a recolour step, change `CPoiIconCategory`'s `QPixmap` members to
-paths plus ~302 literals in `CPoiFilePOI_TagMap.cpp` — the path *shape* changes, so that needs a
-lookup table, not a regex — and a render cache keyed by (icon, size, dpr). The cache is a win
-regardless: `CPoiFilePOI` currently `.scaled()`s a pixmap per POI per repaint.
-
-Gate it or do not do it: render each recoloured SVG at 32, diff against its shipped PNG, require
-`visible (>8) == 0`. A diff that measures **colour** reports ~240 false failures.
-
-Two defects found while scoping: `CPoiFilePOI_TagMap.cpp` asks for `health_pharmacy_dispencing`
-(a typo; the SVG is `pharmacy_dispensing`), and one SVG embeds a raster that is not in the tree
-(`pastedpic_10102008_233747.png`).
 
 ### `CDemVRT`/`IDem` rendering speed
 

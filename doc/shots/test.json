@@ -1,0 +1,90 @@
+{
+    "scenarios": {
+        "track-screen-option": [
+            {
+                "do": "layout",
+                "geometry": "AdnQywADAAAAAAEPAAAAggAABW0AAAOCAAABDwAAAJ4AAAVtAAADggAAAAEAAAAAB4AAAAEPAAAAngAABW0AAAOC",
+                "state": "AAAA/wAAAAD9AAAAAgAAAAAAAAEtAAAClfwCAAAAA/wAAAA6AAABRwAAAQABAAAa+gAAAAABAAAAAvsAAAAaAGQAbwBjAGsAVwBvAHIAawBzAHAAYQBjAGUBAAAAAAAAARUAAAB9AP////sAAAAOAGQAbwBjAGsAUgB0AGUBAAAAAP////8AAAEtAP////wAAAGHAAABSAAAAN0BAAAa+gAAAAIBAAAAA/sAAAAQAGQAbwBjAGsATQBhAHAAcwEAAAAA/////wAAAJAA////+wAAAA4AZABvAGMAawBEAGUAbQEAAAAAAAABFQAAAJsA////+wAAABgAZABvAGMAawBEAGEAdABhAGIAYQBzAGUBAAAAAP////8AAACaAP////sAAAAOAGQAbwBjAGsAUABvAGkAAAAB/gAAANsAAAAyAP///wAAAAEAAAFmAAACn/wCAAAAAfsAAAAYAGQAbwBjAGsAUgBlAGEAbAB0AGkAbQBlAAAAADoAAAKfAAAAjAD///8AAAMsAAAClQAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAIAAAABAAAADgB0AG8AbwBsAEIAYQByAQAAAAD/////AAAAAAAAAAA=",
+                "tab": 0
+            },
+            {
+                "do": "view",
+                "lat": 47.49586782850838,
+                "lon": 11.016654031297536,
+                "zoom": 12
+            },
+            {
+                "do": "expand",
+                "item": "Shoot Demo"
+            },
+            {
+                "do": "select",
+                "item": "Shoot Demo/trk:Demo Track"
+            },
+            {
+                "do": "click",
+                "item": "Shoot Demo/trk:Demo Track",
+                "lat": 47.51000367803942,
+                "lon": 11.00507474728526
+            }
+        ]
+    },
+    "shots": [
+        {
+            "id": "test/menu-setup-workspace",
+            "widget": "menuProject"
+        },
+        {
+            "exposure": "SetupWorkspace",
+            "id": "test/workspace-setup-database",
+            "note": "Workspace behaviour",
+            "set": {
+                "tabWidget.currentIndex": 2
+            },
+            "size": [
+                620,
+                471
+            ]
+        },
+        {
+            "exposure": "SetupWorkspace",
+            "id": "test/workspace-setup-general",
+            "note": "Workspace behaviour",
+            "set": {
+                "tabWidget.currentIndex": 0
+            },
+            "size": [
+                620,
+                471
+            ]
+        },
+        {
+            "exposure": "SetupWorkspace",
+            "id": "test/workspace-setup-workspace",
+            "note": "Workspace behaviour",
+            "set": {
+                "tabWidget.currentIndex": 1
+            },
+            "size": [
+                620,
+                471
+            ]
+        },
+        {
+            "id": "test/track-scropt",
+            "note": "A part of the window in track-screen-option",
+            "rect": [
+                311,
+                157,
+                575,
+                236
+            ],
+            "scenario": "track-screen-option",
+            "size": [
+                1119,
+                741
+            ],
+            "widget": ""
+        }
+    ]
+}

@@ -84,6 +84,22 @@ class CUiTheme {
   /** @brief True when the application palette is a dark one, unless a CForceLight is active. */
   static bool isDark();
 
+  /**
+     @brief Pin the colour scheme to light or dark, whatever the desktop is set to.
+
+     For a run whose output must not depend on the machine that made it - the documentation
+     images. Two levers, because neither is enough alone: the style hint is what a platform that
+     draws decorations of its own listens to, and it does nothing on X11, where
+     QPlatformTheme::requestColorScheme() has an empty default implementation; the palette is what
+     everything here branches on through paletteIsDark(), so CUiTheme, CQmsStyle and the .svgt icon
+     engine all follow from it. The colours are Fusion's own, so a pinned run looks like the style
+     the documentation pins.
+
+     Once, before the first window exists. Unlike CForceLight this is not a scope and not undone:
+     it replaces the application palette.
+   */
+  static void pinColorScheme(bool dark);
+
   /** @brief Text colour of @p role. Legible on the role's own background and on the palette's. */
   static QColor foreground(Role role);
 

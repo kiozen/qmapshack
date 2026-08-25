@@ -49,11 +49,48 @@ CAppOpts* CCommandProcessor::processOptions(const QStringList& arguments) {
   QCommandLineOption fontSizeOption(QStringList() << "font-size", tr("Application font size."), tr("size"));
   parser.addOption(fontSizeOption);
 
+  QCommandLineOption colorSchemeOption(QStringList() << "color-scheme",
+                                       tr("Pin the colour scheme instead of following the desktop: light or dark."),
+                                       tr("name"));
+  parser.addOption(colorSchemeOption);
+
   QCommandLineOption styleOption(QStringList() << "style",
                                  tr("Qt style.") % "\n" % tr("Available:") % " " % QStyleFactory::keys().join(", ") %
                                      "\n" % tr("Recommended:") % " Fusion",
                                  tr("name"));
   parser.addOption(styleOption);
+
+  QCommandLineOption shootOption(QStringList() << "shoot",
+                                 tr("Render the documentation images into the given directory."), tr("dir"));
+  parser.addOption(shootOption);
+
+  QCommandLineOption shootTaskOption(QStringList() << "shoot-task",
+                                     tr("What --shoot does: chapter, list, inspect or explore."), tr("task"),
+                                     "chapter");
+  parser.addOption(shootTaskOption);
+
+  QCommandLineOption shootTargetOption(
+      QStringList() << "shoot-target",
+      tr("What the task works on: the chapter file for chapter, the exposure name for inspect and explore."),
+      tr("file-or-id"));
+  parser.addOption(shootTargetOption);
+
+  QCommandLineOption shootScenarioOption(QStringList() << "shoot-scenario",
+                                         tr("Which of the chapter's scenarios to shoot."), tr("name"));
+  parser.addOption(shootScenarioOption);
+
+  QCommandLineOption onlyOption(QStringList() << "only", tr("Shoot only the images whose id matches this glob."),
+                                tr("glob"));
+  parser.addOption(onlyOption);
+
+  QCommandLineOption docOption(QStringList() << "doc",
+                               tr("Documentation mode: load the fixture and record shots into this checkout."),
+                               tr("dir"));
+  parser.addOption(docOption);
+
+  QCommandLineOption docChapterOption(QStringList() << "doc-chapter", tr("Which chapter F9 appends to."), tr("name"),
+                                      "scratch");
+  parser.addOption(docChapterOption);
 
   parser.addPositionalArgument("files", tr("Files for future use."));
 
@@ -61,5 +98,8 @@ CAppOpts* CCommandProcessor::processOptions(const QStringList& arguments) {
 
   return new CAppOpts(parser.isSet(nosplashOption), parser.isSet(debugOption), parser.isSet(logfileOption),
                       parser.value(configOption), parser.value(localeOption), parser.value(fontFamilyOption),
-                      parser.value(fontSizeOption), parser.positionalArguments());
+                      parser.value(fontSizeOption), parser.value(colorSchemeOption), parser.value(shootOption),
+                      parser.value(shootTaskOption), parser.value(shootTargetOption), parser.value(shootScenarioOption),
+                      parser.value(onlyOption), parser.value(docOption), parser.value(docChapterOption),
+                      parser.positionalArguments());
 }

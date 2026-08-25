@@ -79,6 +79,15 @@ class CMapDraw : public IDrawContext {
   static const QString& getCacheRoot() { return cachePath; }
 
   /**
+     @brief Redirect the tile cache root.
+
+     CDiskCache::cleanupRemovedMaps() deletes the cache directory of every map the current
+     configuration does not know about. A run reading a scratch configuration must point the root
+     somewhere harmless first or it destroys the user's tile cache.
+   */
+  static void setCacheRoot(const QString& path) { cachePath = path; }
+
+  /**
      @brief Forward messages to CCanvas::reportStatus()
 
      Messages from various sources will be collected in a list and displayed in the top left corner

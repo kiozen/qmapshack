@@ -21,6 +21,7 @@
 #include <gdal.h>
 
 #include <QFont>
+#include <QFontDatabase>
 #include <QLocale>
 
 #if defined(Q_OS_MAC)
@@ -32,6 +33,7 @@
 #endif
 #include "setup/CCommandProcessor.h"
 #include "setup/CLogHandler.h"
+#include "theme/CUiTheme.h"
 
 IAppSetup* IAppSetup::instance = nullptr;
 
@@ -114,6 +116,29 @@ CAppOpts* qlOpts = nullptr;
 void IAppSetup::processArguments() {
   CCommandProcessor cmdParse;
   qlOpts = cmdParse.processOptions(QCoreApplication::instance()->arguments());
+
+  // A documentation run draws through the offscreen platform, which on Windows uses the freetype
+  // font database - and that one populates itself from a font directory Qt no longer ships, so
+  // every glyph comes out an empty box unless the application supplies the family itself. Only
+  // here: a normal start uses the platform's own fonts and pays nothing for these.
+  if (!qlOpts->shootDir.isEmpty() || !qlOpts->docDir.isEmpty()) {
+    const QStringList fonts = {":/fonts/DejaVuSans.ttf", ":/fonts/DejaVuSans-Bold.ttf"};
+    for (const QString& font : fonts) {
+      if (QFontDatabase::addApplicationFont(font) < 0) {
+        qWarning() << "could not register" << font;
+      }
+    }
+  }
+
+  // Pinned, not followed: a documentation image must not depend on whether the machine that took
+  // it runs a dark desktop. Before any window exists, so nothing has resolved the palette yet.
+  if (!qlOpts->colorScheme.isEmpty()) {
+    if ("light" == qlOpts->colorScheme || "dark" == qlOpts->colorScheme) {
+      CUiTheme::pinColorScheme("dark" == qlOpts->colorScheme);
+    } else {
+      qWarning() << "unknown --color-scheme" << qlOpts->colorScheme << "- expected light or dark";
+    }
+  }
 
   // override default application font
   QFont appFont = qApp->font();

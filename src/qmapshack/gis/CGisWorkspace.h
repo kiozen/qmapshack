@@ -388,6 +388,7 @@ class CGisWorkspace : public QWidget, private Ui::IGisWorkspace {
   const CSearch& getCurrentSearch() const { return currentSearch; }
 
   const CGisListWks& getWksList() const { return *treeWks; }
+  CGisListWks& getWksList() { return *treeWks; }
 
  signals:
   void sigChanged();

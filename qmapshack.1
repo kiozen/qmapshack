@@ -2,25 +2,7 @@
 .SH NAME
 QMapShack \- GPS mapping (GeoTiff and vector) and GPSr management
 .SH SYNOPSIS
-\fBqmapshack\fP [\options\fP]
-[
-.B \-d
-|
-.B \-\-debug
-]
-[
-.B \-h
-|
-.B \-\-help
-]
-[
-.B \-n
-|
-.B \-\-no-splash
-]
-[
-.IR files ...
-]
+\fBqmapshack\fP [\fIoptions\fP] [\fIfiles\fP ...]
 .SH DESCRIPTION
 GPS mapping (GeoTiff and vector) and GPSr management.
 QMapShack provides a versatile tool for GPS maps in GeoTiff format as well as Garmin's img vector map format.
@@ -32,15 +14,64 @@ Main features:
   \- Handle data project-oriented.
 .SH OPTIONS
 .TP
+\fB\-c\fR, \fB\-\-config\fR \fIfile\fR
+Read and write the configuration in \fIfile\fR instead of the user's own.
+.TP
 \fB\-d\fR, \fB\-\-debug\fR
-Run with debugging output.
+Print debug output to the console.
+.TP
+\fB\-f\fR, \fB\-\-logfile\fR
+Print debug output to a logfile.
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Displays the help message.
 .TP
-\fB\-n\fR, \fB\-\-no-splash\fR
+\fB\-l\fR, \fB\-\-locale\fR \fIcode\fR
+Application locale, for example \fBde\fR or \fBen\fR.
+.TP
+\fB\-n\fR, \fB\-\-no\-splash\fR
 Start without splash screen.
 .TP
+\fB\-v\fR, \fB\-\-version\fR
+Displays version information.
+.TP
+\fB\-\-font\-family\fR \fIname\fR
+Application font family.
+.TP
+\fB\-\-font\-size\fR \fIsize\fR
+Application font size, in points.
+.TP
+\fB\-\-style\fR \fIname\fR
+Qt style. \fBFusion\fR is recommended; \fB\-\-help\fR lists what this build offers.
+.SS Documentation images
+These render the images of the user documentation. They are driven by \fBdoc/tools/shots.py\fR
+in the source tree, which composes the configuration and pins the font, style and locale, and
+are not meant to be used directly.
+.TP
+\fB\-\-shoot\fR \fIdir\fR
+Render documentation images into \fIdir\fR and exit. Needs \fB\-platform offscreen\fR.
+.TP
+\fB\-\-shoot\-task\fR \fItask\fR
+What \fB\-\-shoot\fR does: \fBchapter\fR (default) one chapter file, \fBlist\fR the widget
+classes a shot can build from nothing, \fBinspect\fR one widget's children and properties, or
+\fBexplore\fR which of its controls change it.
+.TP
+\fB\-\-shoot\-target\fR \fIfile-or-id\fR
+What the task works on: the chapter file for \fBchapter\fR, the exposure name for \fBinspect\fR
+and \fBexplore\fR.
+.TP
+\fB\-\-shoot\-scenario\fR \fIname\fR
+Take only the pictures of the chapter that are taken in this scenario. A scenario carries its own
+settings, so one run covers one scenario.
+.TP
+\fB\-\-only\fR \fIglob\fR
+Restrict the run to the images whose id matches \fIglob\fR.
+.TP
+\fB\-\-doc\fR \fIdir\fR
+Documentation mode: load the example data and record images into the checkout at \fIdir\fR.
+.TP
+\fB\-\-doc\-chapter\fR \fIname\fR
+Which chapter documentation mode records into. Default: \fBscratch\fR.
 .SH SEE ALSO
 <https://github.com/Maproom/qmapshack/wiki/DocMain>.
 .SH AUTHOR

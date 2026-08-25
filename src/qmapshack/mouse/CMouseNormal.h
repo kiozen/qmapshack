@@ -51,6 +51,19 @@ class CMouseNormal : public IMouse {
   void doubleClicked(const QPoint& point) override;
   void scaleChanged() override;
 
+  /**
+     @brief Open an item's screen options at pt, the way a click on it does.
+
+     A click only opens them from the hover state, and that state is computed while the canvas
+     paints. A documentation shot has no hover, so it drives this instead of the click.
+
+     @return false if the item has nothing to show at pt
+   */
+  bool showScreenOption(const QPoint& pt, IGisItem* item);
+
+  /// @brief Take the screen options away again
+  void clearScreenOption();
+
  private slots:
   void slotAddPoi(const IPoiItem& poi) const;
   void slotAddWpt() const;

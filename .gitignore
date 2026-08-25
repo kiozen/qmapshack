@@ -5,3 +5,9 @@ CMakeLists.txt.user
 __pycache__/
 *.pyc
 CMakeUserPresets.json
+# What a shoot run leaves beside the pictures: its tile cache and workspace database, the
+# previews of list/inspect/explore, and the JSON reports shots.py reads instead of stdout.
+doc/shots/_cache/
+doc/images/_cache/
+doc/images/_preview/
+doc/images/*.json
