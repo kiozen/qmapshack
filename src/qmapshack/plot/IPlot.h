@@ -44,6 +44,20 @@ class IPlot : public QWidget, public INotifyTrk {
 
   bool isZoomed() const;
 
+  /**
+     @brief The x axis value under a point of the widget.
+
+     The plot's own vocabulary: a distance in [m] on a linear axis, a time in [s] on a time axis -
+     the same value setMouseFocusByDistance()/ByTime() take. A pixel means nothing once the widget
+     is a different width.
+
+     @return NOFLOAT when the point is outside the graph area
+   */
+  qreal xValueAt(const QPoint& pos) const;
+
+  /// @return Where an x axis value sits in the widget, invalid when it is off the visible axis
+  QPoint pointOfXValue(qreal value) const;
+
   void clear();
 
   using INotifyTrk::setMouseFocus;
@@ -116,6 +130,10 @@ class IPlot : public QWidget, public INotifyTrk {
   bool graphAreaContainsMousePos(QPoint& pos);
 
   static int cnt;
+
+  /// Who drives the track's mouse focus and range mode. Unique per plot, compared for equality
+  /// only; unrelated to the widget's address.
+  QString ownerTag;
 
   // different draw modes
   mode_e mode;

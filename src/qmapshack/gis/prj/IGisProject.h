@@ -124,9 +124,6 @@ class IGisProject : public IWksItem {
    */
   void edit();
 
-  /// @brief Are the project's details a page of the main window's tab widget?
-  bool hasDlgDetails() const { return !dlgDetails.isNull(); }
-
   /**
      @brief Return true if saving should be skipped.
    */

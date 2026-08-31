@@ -36,16 +36,24 @@ CSearchLineEdit::CSearchLineEdit(QWidget* parent) : QLineEdit(parent) {
   connect(searchCreationTimer, &QTimer::timeout, this, [this] { slotCreateSearch(text()); });
 
   actionClearFilter = new QAction(QIcon(":/icons/Filter.svgt"), tr("Clear Filter"), this);
+  actionClearFilter->setObjectName("actionClearFilter");
   actionHelp = new QAction(QIcon(":/icons/CSrcUnknown.svgt"), tr("Open Help Window"), this);
+  actionHelp->setObjectName("actionHelp");
   actionSetupFilter = new QAction(QIcon(":/icons/Apply.svgt"), tr("Setup Filter"), this);
+  actionSetupFilter->setObjectName("actionSetupFilter");
   actionError = new QAction(QIcon(":/icons/Attention.svgt"), tr("Error parsing search"), this);
+  actionError->setObjectName("actionError");
   actionAutoProperty = new QAction(QIcon(":/icons/Hint.svgt"), tr("Auto selected property"), this);
+  actionAutoProperty->setObjectName("actionAutoProperty");
 
   actionNameOnly = new QAction(tr("Name Only"), this);
+  actionNameOnly->setObjectName("actionNameOnly");
   actionNameOnly->setCheckable(true);
   actionCompleteText = new QAction(tr("Complete Text"), this);
+  actionCompleteText->setObjectName("actionCompleteText");
   actionCompleteText->setCheckable(true);
   actionCaseSensitive = new QAction(tr("Case Sensitive"), this);
+  actionCaseSensitive->setObjectName("actionCaseSensitive");
   actionCaseSensitive->setCheckable(true);
 
   addAction(actionClearFilter, QLineEdit::TrailingPosition);

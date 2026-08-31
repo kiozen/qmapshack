@@ -785,13 +785,6 @@ void CMainWindow::addWidgetToTab(QWidget* w) {
   }
 }
 
-void CMainWindow::closeWidgetTab(QWidget* w) {
-  const int i = tabWidget->indexOf(w);
-  if (i != NOIDX) {
-    slotTabCloseRequest(i);
-  }
-}
-
 CCanvas* CMainWindow::getVisibleCanvas() const {
   int n = tabMaps->currentIndex();
   CMapList* mapList = dynamic_cast<CMapList*>(tabMaps->widget(n));

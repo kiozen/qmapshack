@@ -707,96 +707,210 @@ bool CWksItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model, con
   return QStyledItemDelegate::editorEvent(event, model, opt, index);
 }
 
-bool CWksItemDelegate::mousePressProject(QMouseEvent* me, const QStyleOptionViewItem& opt, const QModelIndex& index,
-                                         IWksItem& item) {
-  const auto& layout = getRectanglesProject(opt, item);
-  if (layout.rectVisible.contains(me->pos())) {
-    item.setVisibility(!item.isVisible());
-    emit sigUpdateCanvas();
-    return true;
-  } else if (layout.rectSave.contains(me->pos())) {
-    if (item.isOnDevice() == IWksItem::eTypeNone) {
+QString CWksItemDelegate::buttonName(button_e button) {
+  switch (button) {
+    case button_e::eVisible:
+      return "visible";
+    case button_e::eSave:
+      return "save";
+    case button_e::eAutoSyncDev:
+      return "autoSyncDev";
+    case button_e::eActiveProject:
+      return "activeProject";
+    case button_e::eSetup:
+      return "setup";
+    case button_e::eWptIcon:
+      return "wptIcon";
+    case button_e::eLineEdit:
+      return "lineEdit";
+    case button_e::eNone:
+      return {};
+  }
+  return {};
+}
+
+CWksItemDelegate::button_e CWksItemDelegate::buttonByName(const QString& name) {
+  static const QList<button_e> all = {button_e::eVisible,       button_e::eSave,  button_e::eAutoSyncDev,
+                                      button_e::eActiveProject, button_e::eSetup, button_e::eWptIcon,
+                                      button_e::eLineEdit};
+  for (button_e button : all) {
+    if (buttonName(button) == name) {
+      return button;
+    }
+  }
+  return button_e::eNone;
+}
+
+CWksItemDelegate::button_t CWksItemDelegate::buttonAt(const QStyleOptionViewItem& opt, IWksItem& item,
+                                                      const QPoint& pos) const {
+  switch (item.getBaseType()) {
+    case IWksItem::eBaseType::Project: {
+      const auto& layout = getRectanglesProject(opt, item);
+      if (layout.rectVisible.contains(pos)) {
+        return {button_e::eVisible, layout.rectVisible};
+      }
+      if (layout.rectSave.contains(pos)) {
+        return {button_e::eSave, layout.rectSave};
+      }
+      if (layout.rectAutoSyncDev.contains(pos)) {
+        return {button_e::eAutoSyncDev, layout.rectAutoSyncDev};
+      }
+      if (layout.rectActiveProject.contains(pos)) {
+        return {button_e::eActiveProject, layout.rectActiveProject};
+      }
+      break;
+    }
+
+    case IWksItem::eBaseType::Device: {
+      const auto& layout = getRectanglesDevice(opt, item);
+      if (layout.rectVisible.contains(pos)) {
+        return {button_e::eVisible, layout.rectVisible};
+      }
+      break;
+    }
+
+    case IWksItem::eBaseType::GeoSearch: {
+      const auto& layout = getRectanglesGeoSearch(opt);
+      if (layout.rectVisible.contains(pos)) {
+        return {button_e::eVisible, layout.rectVisible};
+      }
+      if (layout.rectSetup.contains(pos)) {
+        return {button_e::eSetup, layout.rectSetup};
+      }
+      if (layout.rectWptIcon.contains(pos)) {
+        return {button_e::eWptIcon, layout.rectWptIcon};
+      }
+      if (layout.rectLineEdit.contains(pos)) {
+        return {button_e::eLineEdit, layout.rectLineEdit};
+      }
+      break;
+    }
+
+    default:;
+  }
+
+  return {};
+}
+
+bool CWksItemDelegate::pressButton(button_e button, IWksItem& item, bool hasFocus, const QRect& rectButton) {
+  switch (button) {
+    case button_e::eVisible:
+      item.setVisibility(!item.isVisible());
+      emit sigUpdateCanvas();
+      return true;
+
+    case button_e::eSave:
+      if (item.isOnDevice() != IWksItem::eTypeNone) {
+        treeWidget->slotCopyProject();
+        return true;
+      }
       if (item.isAutoSave()) {
         item.setAutoSave(false);
-      } else {
-        if (item.isChanged()) {
-          IGisProject* project = dynamic_cast<IGisProject*>(&item);
-          if (project == nullptr) {
-            return false;
-          }
-          if (project->canSave()) {
-            project->save();
-          } else {
-            project->saveAs();
-          }
+        return true;
+      }
+      if (!item.isChanged()) {
+        item.setAutoSave(true);
+        return true;
+      }
+      {
+        IGisProject* project = dynamic_cast<IGisProject*>(&item);
+        if (project == nullptr) {
+          return false;
+        }
+        if (project->canSave()) {
+          project->save();
         } else {
-          item.setAutoSave(true);
+          project->saveAs();
         }
       }
-    } else {
-      treeWidget->slotCopyProject();
-    }
-    return true;
-  } else if (layout.rectAutoSyncDev.contains(me->pos())) {
-    item.setAutoSyncToDev(!item.isAutoSyncToDev());
-    return true;
+      return true;
 
-  } else if (layout.rectActiveProject.contains(me->pos())) {
-    IGisProject* project = dynamic_cast<IGisProject*>(&item);
-    if (project == nullptr) {
-      return false;
-    }
-    if ((opt.state & QStyle::State_HasFocus) != 0) {
+    case button_e::eAutoSyncDev:
+      item.setAutoSyncToDev(!item.isAutoSyncToDev());
+      return true;
+
+    case button_e::eActiveProject: {
+      IGisProject* project = dynamic_cast<IGisProject*>(&item);
+      // Only a row that already holds the focus: the click that gives it the focus flips nothing,
+      // and a step recorded for it would flip it on replay.
+      if (project == nullptr || !hasFocus) {
+        return false;
+      }
       treeWidget->setUserFocus(project->getKey(), !project->hasUserFocus());
+      return true;
     }
-    return true;
+
+    case button_e::eSetup: {
+      CGeoSearch* search = dynamic_cast<CGeoSearch*>(&item);
+      if (search == nullptr) {
+        return false;
+      }
+      search->selectService(rectButton);
+      return true;
+    }
+
+    case button_e::eWptIcon: {
+      CGeoSearch* search = dynamic_cast<CGeoSearch*>(&item);
+      if (search == nullptr) {
+        return false;
+      }
+      search->changeSymbol();
+      return true;
+    }
+
+    case button_e::eLineEdit:
+    case button_e::eNone:
+      return false;
   }
 
   return false;
+}
+
+bool CWksItemDelegate::mousePressProject(QMouseEvent* me, const QStyleOptionViewItem& opt, const QModelIndex& index,
+                                         IWksItem& item) {
+  const button_t& hit = buttonAt(opt, item, me->pos());
+  if (button_e::eNone == hit.button) {
+    return false;
+  }
+  // Only a button that acted is a step: a click that merely gives the row the focus changes
+  // nothing, and replaying it would.
+  if (pressButton(hit.button, item, (opt.state & QStyle::State_HasFocus) != 0, hit.rect)) {
+    emit sigButtonPressed(index, hit.button);
+  }
+  // Consumed either way - the click landed on a button, so the view must not act on it too.
+  return true;
 }
 
 bool CWksItemDelegate::mousePressDevice(QMouseEvent* me, const QStyleOptionViewItem& opt, const QModelIndex& index,
                                         IWksItem& item) {
-  const auto& layout = getRectanglesDevice(opt, item);
-
-  if (layout.rectVisible.contains(me->pos())) {
-    item.setVisibility(!item.isVisible());
-    emit sigUpdateCanvas();
-    return true;
+  const button_t& hit = buttonAt(opt, item, me->pos());
+  if (button_e::eNone == hit.button) {
+    return false;
   }
-  return false;
+  if (pressButton(hit.button, item, (opt.state & QStyle::State_HasFocus) != 0, hit.rect)) {
+    emit sigButtonPressed(index, hit.button);
+  }
+  return true;
 }
 
 bool CWksItemDelegate::mousePressGeoSearch(QMouseEvent* me, const QStyleOptionViewItem& opt, const QModelIndex& index,
                                            IWksItem& item) {
-  CGeoSearch* search = dynamic_cast<CGeoSearch*>(&item);
-  if (search == nullptr) {
+  if (dynamic_cast<CGeoSearch*>(&item) == nullptr) {
     return false;
   }
 
-  const auto& layout = getRectanglesGeoSearch(opt);
+  const button_t& hit = buttonAt(opt, item, me->pos());
 
-  if (layout.rectVisible.contains(me->pos())) {
-    item.setVisibility(!item.isVisible());
-    emit sigUpdateCanvas();
-    return true;
-  }
-  if (layout.rectSetup.contains(me->pos())) {
-    search->selectService(layout.rectSetup);
-    return true;
-  }
-  if (layout.rectWptIcon.contains(me->pos())) {
-    search->changeSymbol();
-    return true;
-  }
-
-  // A click on the line edit is not consumed here, so the view's default
-  // editorEvent handling can start editing the geo search name. Clicks
-  // anywhere else on the row are consumed to suppress that default behavior.
-  if (layout.rectLineEdit.contains(me->pos())) {
+  // A click on the line edit is not consumed here, so the view's default editorEvent handling can
+  // start editing the geo search name. Clicks anywhere else on the row are consumed to suppress
+  // that default behavior.
+  if (button_e::eLineEdit == hit.button) {
     return false;
   }
 
+  if (pressButton(hit.button, item, (opt.state & QStyle::State_HasFocus) != 0, hit.rect)) {
+    emit sigButtonPressed(index, hit.button);
+  }
   return true;
 }
 
@@ -858,7 +972,8 @@ bool CWksItemDelegate::helpEventProject(const QPoint& pos, const QPoint& posGlob
       QToolTip::showText(posGlobal, toRichText(tr("Disable automatic synchronization with GPS device.")), view, {},
                          3000);
     } else {
-      QToolTip::showText(posGlobal, toRichText(tr("Enable automatic synchronization with GPS device.")), view, {}, 3000);
+      QToolTip::showText(posGlobal, toRichText(tr("Enable automatic synchronization with GPS device.")), view, {},
+                         3000);
     }
     return true;
   } else if (layout.rectActiveProject.contains(pos)) {

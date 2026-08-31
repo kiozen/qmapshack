@@ -60,6 +60,18 @@ CAppOpts* CCommandProcessor::processOptions(const QStringList& arguments) {
                                  tr("name"));
   parser.addOption(styleOption);
 
+  // Developer only: the subsystem behind these is compiled under QMS_DOC_MODE alone, so a user's
+  // binary must reject them rather than accept a switch that does nothing. The values stay on
+  // CAppOpts either way - empty - so no reader of them needs a branch.
+  QString shootDir;
+  QString shootTask;
+  QString shootTarget;
+  QString shootScenario;
+  QString shootOnly;
+  QString docDir;
+  QString docChapter;
+
+#ifdef QMS_DOC_MODE
   QCommandLineOption shootOption(QStringList() << "shoot",
                                  tr("Render the documentation images into the given directory."), tr("dir"));
   parser.addOption(shootOption);
@@ -91,15 +103,24 @@ CAppOpts* CCommandProcessor::processOptions(const QStringList& arguments) {
   QCommandLineOption docChapterOption(QStringList() << "doc-chapter", tr("Which chapter F9 appends to."), tr("name"),
                                       "scratch");
   parser.addOption(docChapterOption);
+#endif
 
   parser.addPositionalArgument("files", tr("Files for future use."));
 
   parser.process(arguments);
 
+#ifdef QMS_DOC_MODE
+  shootDir = parser.value(shootOption);
+  shootTask = parser.value(shootTaskOption);
+  shootTarget = parser.value(shootTargetOption);
+  shootScenario = parser.value(shootScenarioOption);
+  shootOnly = parser.value(onlyOption);
+  docDir = parser.value(docOption);
+  docChapter = parser.value(docChapterOption);
+#endif
+
   return new CAppOpts(parser.isSet(nosplashOption), parser.isSet(debugOption), parser.isSet(logfileOption),
                       parser.value(configOption), parser.value(localeOption), parser.value(fontFamilyOption),
-                      parser.value(fontSizeOption), parser.value(colorSchemeOption), parser.value(shootOption),
-                      parser.value(shootTaskOption), parser.value(shootTargetOption), parser.value(shootScenarioOption),
-                      parser.value(onlyOption), parser.value(docOption), parser.value(docChapterOption),
-                      parser.positionalArguments());
+                      parser.value(fontSizeOption), parser.value(colorSchemeOption), shootDir, shootTask, shootTarget,
+                      shootScenario, shootOnly, docDir, docChapter, parser.positionalArguments());
 }

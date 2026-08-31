@@ -24,7 +24,9 @@
 
 CTableTrkInfo::CTableTrkInfo(QWidget* parent) : QTreeWidget(parent), INotifyTrk(CGisItemTrk::eVisualTrkTable) {
   actionEdit = new QAction(QIcon("://icons/EditText.svgt"), tr("Edit..."), this);
+  actionEdit->setObjectName("actionEdit");
   actionDelete = new QAction(QIcon("://icons/DeleteMultiple.svgt"), tr("Delete"), this);
+  actionDelete->setObjectName("actionDelete");
 
   menu = new QMenu(this);
   menu->addAction(actionEdit);

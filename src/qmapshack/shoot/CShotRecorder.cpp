@@ -29,13 +29,19 @@
 #include <QDoubleSpinBox>
 #include <QEventLoop>
 #include <QGroupBox>
+#include <QHeaderView>
 #include <QJsonObject>
 #include <QLineEdit>
+#include <QMenu>
+#include <QMenuBar>
 #include <QMouseEvent>
 #include <QRect>
+#include <QScrollBar>
 #include <QSlider>
 #include <QSpinBox>
+#include <QSplitter>
 #include <QStringList>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
 #include <QTreeWidget>
@@ -50,16 +56,19 @@
 #include "canvas/CCanvas.h"
 #include "gis/CGisListWks.h"
 #include "gis/CGisWorkspace.h"
+#include "gis/CWksItemDelegate.h"
 #include "gis/IGisItem.h"
-#include "gis/prj/IGisProject.h"
+#include "gis/IWksItem.h"
 #include "gis/proj_x.h"
 #include "gis/trk/CGisItemTrk.h"
 #include "mouse/CMouseNormal.h"
 #include "mouse/IScrOpt.h"
+#include "plot/IPlot.h"
 #include "shoot/CShotChapter.h"
 #include "shoot/CShotContext.h"
 #include "shoot/CShotWriter.h"
 #include "units/IUnit.h"
+#include "widgets/CIconGrid.h"
 
 namespace {
 /// A press and release further apart than this moved the map; it was no click on what was under it
@@ -111,6 +120,17 @@ QTabWidget* centralTabs(CShotContext& ctx) {
   return nullptr;
 }
 
+/// @return The nearest ancestor of that type, the widget itself included; nullptr when there is none
+template <typename T>
+T* holding(QWidget* widget) {
+  for (QWidget* w = widget; nullptr != w; w = w->parentWidget()) {
+    if (T* found = qobject_cast<T*>(w); nullptr != found) {
+      return found;
+    }
+  }
+  return nullptr;
+}
+
 /// @return The canvas the widget belongs to, or nullptr when it belongs to none
 CCanvas* canvasHolding(QWidget* widget) {
   for (QWidget* w = widget; nullptr != w; w = w->parentWidget()) {
@@ -119,42 +139,6 @@ CCanvas* canvasHolding(QWidget* widget) {
     }
   }
   return nullptr;
-}
-
-/// @brief Collect the items below this one whose details are a page of the window
-void collectDetails(const QTreeWidgetItem* item, QSet<QString>& paths) {
-  const IGisProject* project = dynamic_cast<const IGisProject*>(item);
-  const CGisItemTrk* trk = dynamic_cast<const CGisItemTrk*>(item);
-  const bool open = (nullptr != project && project->hasDlgDetails()) || (nullptr != trk && trk->hasDlgDetails());
-  if (open) {
-    const QString& path = CShotChapter::itemPathOf(item);
-    if (!path.isEmpty()) {
-      paths << path;
-    }
-  }
-  for (int i = 0; i < item->childCount(); i++) {
-    collectDetails(item->child(i), paths);
-  }
-}
-
-/**
-   @brief Take every details page back out of the window.
-
-   A canvas is the only page the window keeps on its own; everything else is a details page some
-   step put there, and a build takes one picture after another in one application.
- */
-void closeDetailPages(CShotContext& ctx) {
-  CMainWindow* main = ctx.mainWindow();
-  QTabWidget* tabs = centralTabs(ctx);
-  if (nullptr == main || nullptr == tabs) {
-    return;
-  }
-  for (int i = tabs->count() - 1; i >= 0; i--) {
-    QWidget* page = tabs->widget(i);
-    if (nullptr == qobject_cast<CCanvas*>(page)) {
-      main->closeWidgetTab(page);
-    }
-  }
 }
 
 /**
@@ -252,10 +236,114 @@ QString hitAt(QWidget* widget, const QPoint& pos) {
   return (nullptr == child) ? CShotChapter::addressOf(nullptr, widget) : CShotChapter::addressOf(widget, child);
 }
 
+/**
+   @brief Does a press mean anything, or is it the writer reaching for the furniture?
+
+   The diff had nothing to say about this release, so what the press landed on is all that is left
+   to judge it by. A splitter handle, a dock title, a scroll bar, a menu bar, a label or the empty
+   space under the last row of a tree acts on nothing, and a scenario carrying such a click replays
+   it against whatever has grown into that place since.
+
+   A whitelist, not a blacklist: a widget nobody has taught the recorder about records nothing,
+   which is recoverable, while a wrong click is a picture of the wrong state.
+ */
+bool pressIsStep(QWidget* widget, const QPoint& pos) {
+  for (QWidget* w = widget; nullptr != w; w = w->parentWidget()) {
+    // Chrome first at every level: a scroll bar sits inside the very view it scrolls.
+    if (nullptr != qobject_cast<QScrollBar*>(w) || nullptr != qobject_cast<QSplitterHandle*>(w) ||
+        nullptr != qobject_cast<QMenuBar*>(w)) {
+      return false;
+    }
+    // A header sorts or resizes; it is an item view too, but it has no index to hit.
+    if (nullptr != qobject_cast<QHeaderView*>(w)) {
+      return true;
+    }
+    if (const QAbstractItemView* view = qobject_cast<const QAbstractItemView*>(w); nullptr != view) {
+      const QPoint& inViewport = view->viewport()->mapFromGlobal(widget->mapToGlobal(pos));
+      return view->indexAt(inViewport).isValid();
+    }
+    if (nullptr != qobject_cast<QAbstractButton*>(w) || nullptr != qobject_cast<QTabBar*>(w) ||
+        nullptr != qobject_cast<QComboBox*>(w)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// @brief The viewport a position is delivered to, which for a scroll area is not the widget itself
 QWidget* inputTarget(QWidget* widget) {
   QAbstractScrollArea* area = qobject_cast<QAbstractScrollArea*>(widget);
   return (nullptr == area) ? widget : area->viewport();
+}
+
+/**
+   @brief Act on a workspace row's tool button.
+
+   Through the delegate, not through a point: the buttons are painted into the row and carry no
+   widget, so the only thing that still means the same button after a relayout is its name.
+
+   @param rectRow  where the row sits, only to place the popup the setup button opens
+   @return true when the row and the button were both found and the button acted
+ */
+bool pressRowButton(CShotContext& ctx, const QString& path, const QString& name, const QRect& rectRow) {
+  CGisListWks* list = ctx.wksList();
+  CWksItemDelegate* delegate = (nullptr == list) ? nullptr : qobject_cast<CWksItemDelegate*>(list->itemDelegate());
+  IWksItem* item = dynamic_cast<IWksItem*>(CShotChapter::resolveItemPath(list, path));
+  if (nullptr == delegate || nullptr == item) {
+    qWarning() << "shoot: the scenario has no item" << path << "with buttons";
+    return false;
+  }
+
+  const CWksItemDelegate::button_e button = CWksItemDelegate::buttonByName(name);
+  if (CWksItemDelegate::button_e::eNone == button) {
+    qWarning() << "shoot: the scenario asks for a row button called" << name << "which this build does not know";
+    return false;
+  }
+
+  // The row is made current first: the writer clicked the button on a row that had the focus, and
+  // that is what the active-project button asks about.
+  list->setCurrentItem(item);
+  if (!delegate->pressButton(button, *item, true, rectRow)) {
+    qWarning() << "shoot: the button" << name << "of" << path << "does nothing in this state";
+    return false;
+  }
+  return true;
+}
+
+/**
+   @brief Where a step lands on a surface that names what it holds.
+
+   @return NOPOINT when the surface no longer holds it, which is a counted failure and not a click
+           somewhere else
+ */
+QPoint pointOnNamedSurface(const QJsonObject& action, QWidget* widget) {
+  if (action.contains("x")) {
+    IPlot* plot = qobject_cast<IPlot*>(widget);
+    if (nullptr == plot) {
+      qWarning() << "shoot:" << action["widget"].toString() << "is a" << widget->metaObject()->className()
+                 << "and not a plot";
+      return NOPOINT;
+    }
+    const QPoint& pos = plot->pointOfXValue(action["x"].toDouble());
+    if (NOPOINT == pos) {
+      qWarning() << "shoot: the plot does not reach" << action["x"].toDouble() << "on its x axis";
+    }
+    return pos;
+  }
+
+  CIconGrid* grid = qobject_cast<CIconGrid*>(widget);
+  if (nullptr == grid) {
+    qWarning() << "shoot:" << action["widget"].toString() << "is a" << widget->metaObject()->className()
+               << "and not an icon grid";
+    return NOPOINT;
+  }
+  const QString& name = action["icon"].toString();
+  const QRect& rect = grid->rectOfIcon(name);
+  if (!rect.isValid()) {
+    qWarning() << "shoot: the icon grid does not show" << name;
+    return NOPOINT;
+  }
+  return rect.center();
 }
 
 /// @return Where a workspace row sits, after putting it on screen; invalid when it cannot be found
@@ -328,23 +416,6 @@ int applyAction(const QJsonObject& action, CShotContext& ctx, int& wantedTab) {
     return failures;
   }
 
-  if ("details" == what) {
-    const QString& path = action["item"].toString();
-    QTreeWidgetItem* item = CShotChapter::resolveItemPath(ctx.wksList(), path);
-    // A track and a project are the two whose details are a page of the window. Every other
-    // edit() runs a modal dialog, which a headless run would sit in forever - such a picture is
-    // an exposure, not a scenario.
-    if (IGisProject* project = dynamic_cast<IGisProject*>(item); nullptr != project) {
-      project->edit();
-    } else if (CGisItemTrk* trk = dynamic_cast<CGisItemTrk*>(item); nullptr != trk) {
-      trk->edit();
-    } else {
-      qWarning() << "shoot:" << path << "has no details this scenario can open";
-      failures++;
-    }
-    return failures;
-  }
-
   if ("set" == what) {
     const QString& address = action["widget"].toString();
     const QString& property = action["property"].toString();
@@ -363,11 +434,15 @@ int applyAction(const QJsonObject& action, CShotContext& ctx, int& wantedTab) {
       failures++;
       return failures;
     }
-    const QByteArray& geometry = QByteArray::fromBase64(action["geometry"].toString().toLatin1());
-    const QByteArray& state = QByteArray::fromBase64(action["state"].toString().toLatin1());
-    if (!geometry.isEmpty()) {
-      main->restoreGeometry(geometry);
+    if (action.contains("geometry")) {
+      // Recorded before the window size became the shot's alone. Ignored, not applied: it is the
+      // record that used to win over the shot's `size` and put a rectangle outside its picture.
+      qWarning() << "shoot: this scenario still carries a window geometry, which is no longer read."
+                 << "Record it again, or take the geometry out of the file.";
     }
+    // After the caller has put the window at the shot's size, never before: saveState() stores dock
+    // extents in pixels and Qt distributes them across whatever width the window has now.
+    const QByteArray& state = QByteArray::fromBase64(action["state"].toString().toLatin1());
     if (!state.isEmpty()) {
       main->restoreState(state);
     }
@@ -435,6 +510,12 @@ int applyAction(const QJsonObject& action, CShotContext& ctx, int& wantedTab) {
         qWarning() << "shoot: the scenario has no item" << path;
         return failures + 1;
       }
+      // A row's tool button is painted, not a widget, so there is no point to click that would
+      // mean the same button after a relayout. The delegate acts on it by name instead.
+      const QString& button = action["button"].toString();
+      if (!button.isEmpty()) {
+        return pressRowButton(ctx, path, button, rect) ? failures : failures + 1;
+      }
       clickOn(ctx.wksList()->viewport(), rect.center(), twice);
       return failures;
     }
@@ -443,6 +524,17 @@ int applyAction(const QJsonObject& action, CShotContext& ctx, int& wantedTab) {
     if (nullptr == widget) {
       return failures + 1;
     }
+
+    // A plot and an icon grid carry what they hit, not where: an axis value and an icon name.
+    if (action.contains("x") || action.contains("icon")) {
+      const QPoint& named = pointOnNamedSurface(action, widget);
+      if (NOPOINT == named) {
+        return failures + 1;
+      }
+      clickOn(widget, named, twice);
+      return failures;
+    }
+
     QWidget* target = inputTarget(widget);
     const QPoint& pos = pointIn(target, action["at"].toArray());
 
@@ -566,6 +658,27 @@ CShotRecorder::~CShotRecorder() {
   }
 }
 
+void CShotRecorder::watchRowButtons() {
+  CGisListWks* list = ctx.wksList();
+  CWksItemDelegate* delegate = (nullptr == list) ? nullptr : qobject_cast<CWksItemDelegate*>(list->itemDelegate());
+  if (nullptr == delegate) {
+    qWarning() << "shoot: the workspace has no delegate, so its row buttons cannot be recorded";
+    return;
+  }
+  // A row's tool buttons are painted, not widgets, so no press reaches the filter as anything but
+  // a point in the viewport. The delegate is the only thing that knows which button that was.
+  connect(
+      delegate, &CWksItemDelegate::sigButtonPressed, this,
+      [this, list](const QModelIndex& index, CWksItemDelegate::button_e button) {
+        if (!recording) {
+          return;
+        }
+        pressButtonItem = CShotChapter::itemPathOf(list->itemFromIndex(index));
+        pressButtonName = CWksItemDelegate::buttonName(button);
+      },
+      Qt::UniqueConnection);
+}
+
 void CShotRecorder::start(const QJsonArray& base) {
   actions = QJsonArray();
   for (const QJsonValue& value : base) {
@@ -579,8 +692,11 @@ void CShotRecorder::start(const QJsonArray& base) {
 
   pressedOnCanvas = false;
   pressItem.clear();
+  pressButtonName.clear();
+  pressButtonItem.clear();
   snapshot();
   recording = true;
+  watchRowButtons();
   qApp->installEventFilter(this);
 }
 
@@ -624,7 +740,9 @@ QJsonObject CShotRecorder::layoutOf(CShotContext& ctx) {
   if (nullptr == main) {
     return action;
   }
-  action["geometry"] = QString::fromLatin1(main->saveGeometry().toBase64());
+  // The arrangement only, never saveGeometry(): the window's size is the shot's `size`, and two
+  // records of one number drift apart - a scenario recorded at one size and a rectangle dragged at
+  // another framed something else entirely.
   action["state"] = QString::fromLatin1(main->saveState().toBase64());
   if (const QTabWidget* tabs = centralTabs(ctx); nullptr != tabs) {
     action["tab"] = tabs->currentIndex();
@@ -663,18 +781,6 @@ QSet<QString> CShotRecorder::expandedNow() const {
     if (item->isExpanded() && !path.isEmpty()) {
       paths << path;
     }
-  }
-  return paths;
-}
-
-QSet<QString> CShotRecorder::detailsNow() const {
-  QSet<QString> paths;
-  CGisListWks* list = ctx.wksList();
-  if (nullptr == list) {
-    return paths;
-  }
-  for (int i = 0; i < list->topLevelItemCount(); i++) {
-    collectDetails(list->topLevelItem(i), paths);
   }
   return paths;
 }
@@ -742,7 +848,6 @@ QList<CShotRecorder::input_t> CShotRecorder::inputsOf() const {
 void CShotRecorder::snapshot() {
   lastSelection = selectionNow();
   lastExpanded = expandedNow();
-  lastDetails = detailsNow();
 
   lastInputs.clear();
   const QList<input_t>& inputs = inputsOf();
@@ -752,6 +857,8 @@ void CShotRecorder::snapshot() {
 }
 
 void CShotRecorder::captureChanges() {
+  const qsizetype before = actions.size();
+
   // The selection first: it is what most pictures are about, and a click on the map sets it too.
   const QString& selection = selectionNow();
   if (!selection.isEmpty() && selection != lastSelection) {
@@ -777,29 +884,6 @@ void CShotRecorder::captureChanges() {
     actions.append(action);
   }
 
-  // Before the inputs: opening the details is what puts their controls in the window at all, so a
-  // value driven into one only means something once the page is there.
-  const QSet<QString>& details = detailsNow();
-  QStringList opened;
-  for (const QString& path : details) {
-    if (!lastDetails.contains(path)) {
-      opened << path;
-    }
-  }
-  opened.sort();
-  for (const QString& path : std::as_const(opened)) {
-    QJsonObject action;
-    action["do"] = "details";
-    action["item"] = path;
-    actions.append(action);
-  }
-  // Closed again, so the step that opened them is not part of the scenario either.
-  for (const QString& path : std::as_const(lastDetails)) {
-    if (!details.contains(path)) {
-      forgetDetailsOn(path);
-    }
-  }
-
   const QList<input_t>& inputs = inputsOf();
   for (const input_t& input : inputs) {
     const QString& key = input.address + "." + input.property;
@@ -822,6 +906,17 @@ void CShotRecorder::captureChanges() {
     actions.append(action);
   }
 
+  // After the selection the same click produced, because a row is selected before its button acts.
+  if (!pressButtonName.isEmpty() && !pressButtonItem.isEmpty()) {
+    QJsonObject action;
+    action["do"] = "click";
+    action["item"] = pressButtonItem;
+    action["button"] = pressButtonName;
+    actions.append(action);
+  }
+  pressButtonName.clear();
+  pressButtonItem.clear();
+
   // The map view is not diffed: it is taken whole when the recording stops, so it comes first on
   // replay and a click's geographic point lands where the writer made it.
 
@@ -843,6 +938,13 @@ void CShotRecorder::captureChanges() {
   pressedOnCanvas = false;
   pressItem.clear();
 
+  // The diff had nothing to say about this release, so the press itself is the step. A button that
+  // opens a dialog leaves no state behind and used to be unrecordable.
+  if (actions.size() == before) {
+    recordPress(pressWasDouble);
+  }
+  pressWasDouble = false;
+
   snapshot();
 }
 
@@ -856,14 +958,141 @@ void CShotRecorder::forgetClickOn(const QString& item) {
   }
 }
 
-void CShotRecorder::forgetDetailsOn(const QString& item) {
-  for (qsizetype i = actions.size() - 1; i >= 0; i--) {
-    const QJsonObject& action = actions.at(i).toObject();
-    if ("details" == action["do"].toString() && item == action["item"].toString()) {
-      actions.removeAt(i);
-      return;
+bool CShotRecorder::recordNamedSurface(QWidget* widget) {
+  CMainWindow* main = ctx.mainWindow();
+
+  if (IPlot* plot = holding<IPlot>(widget); nullptr != plot) {
+    const QPoint& pos = plot->mapFromGlobal(widget->mapToGlobal(pressPos));
+    const qreal value = plot->xValueAt(pos);
+    if (NOFLOAT == value) {
+      return false;
     }
+    const QString& address = CShotChapter::addressOf(main, plot);
+    if (address.isEmpty()) {
+      return false;
+    }
+    QJsonObject action;
+    action["do"] = "click";
+    action["widget"] = address;
+    // The x axis' own value - metres along the track, or seconds into it. The graph area moves
+    // with the axis labels, so a fraction of the widget points somewhere else at another size.
+    action["x"] = value;
+    actions.append(action);
+    return true;
   }
+
+  if (CIconGrid* grid = holding<CIconGrid>(widget); nullptr != grid) {
+    const QPoint& pos = grid->mapFromGlobal(widget->mapToGlobal(pressPos));
+    const QString& name = grid->iconAt(pos);
+    if (name.isEmpty()) {
+      return false;
+    }
+    const QString& address = CShotChapter::addressOf(main, grid);
+    if (address.isEmpty()) {
+      return false;
+    }
+    QJsonObject action;
+    action["do"] = "click";
+    action["widget"] = address;
+    // The grid reflows to the width it is given, so the tile the writer hit is only ever the icon.
+    action["icon"] = name;
+    actions.append(action);
+    return true;
+  }
+
+  return false;
+}
+
+void CShotRecorder::recordPress(bool twice) {
+  QWidget* widget = pressWidget;
+  if (nullptr == widget || isIgnored(widget)) {
+    return;
+  }
+  // The canvas has a vocabulary of its own - a geographic point - and the workspace list is what
+  // the selection diff is about. Neither wants a position.
+  if (nullptr != canvasHolding(widget) || nullptr != qobject_cast<QMenu*>(widget)) {
+    return;
+  }
+  CGisListWks* list = ctx.wksList();
+  if (nullptr != list && (widget == list || widget == list->viewport())) {
+    return;
+  }
+  // A surface that names what it holds is recorded by that name; only what has none falls through
+  // to a position, and only then does it have to be a widget that acts on a click.
+  if (recordNamedSurface(widget)) {
+    return;
+  }
+  if (!pressIsStep(widget, pressPos)) {
+    qDebug() << "shoot: nothing here acts on a click, so it is not recorded:" << widget->metaObject()->className();
+    return;
+  }
+
+  CMainWindow* main = ctx.mainWindow();
+  const QString& address = CShotChapter::addressOf(main, widget);
+  if (address.isEmpty()) {
+    qWarning() << "shoot: nothing here can be named, so the click is not recorded:"
+               << widget->metaObject()->className();
+    return;
+  }
+
+  QJsonObject action;
+  action["do"] = twice ? "dclick" : "click";
+  action["widget"] = address;
+  action["at"] =
+      QJsonArray({double(pressPos.x()) / qMax(1, widget->width()), double(pressPos.y()) / qMax(1, widget->height())});
+  const QString& hit = hitAt(widget, pressPos);
+  if (!hit.isEmpty()) {
+    action["hit"] = hit;
+  }
+  actions.append(action);
+}
+
+void CShotRecorder::recordMenuAction(QWidget* menu, const QPoint& pos) {
+  QMenu* popup = qobject_cast<QMenu*>(menu);
+  const QAction* picked = (nullptr == popup) ? nullptr : popup->actionAt(pos);
+  if (nullptr == picked || picked->isSeparator()) {
+    return;
+  }
+  if (picked->objectName().isEmpty()) {
+    // The text is translated, so it is no address. Naming the action is the fix, in the class that
+    // builds the menu.
+    qWarning() << "shoot: the menu entry" << picked->text() << "has no objectName and cannot be recorded";
+    return;
+  }
+
+  QJsonObject action;
+  action["do"] = "trigger";
+  action["action"] = picked->objectName();
+  actions.append(action);
+}
+
+void CShotRecorder::recordContextMenu(QWidget* widget, const QPoint& pos) {
+  CMainWindow* main = ctx.mainWindow();
+  CGisListWks* list = ctx.wksList();
+  // The viewport is what the event is delivered to; the address belongs to the widget that owns it.
+  QWidget* owner = widget;
+  if (nullptr != list && widget == list->viewport()) {
+    owner = list;
+  }
+
+  const QString& address = CShotChapter::addressOf(main, owner);
+  if (address.isEmpty()) {
+    return;
+  }
+
+  QJsonObject action;
+  action["do"] = "menu";
+  action["widget"] = address;
+  if (owner == list) {
+    const QTreeWidgetItem* item = list->itemAt(pos);
+    const QString& path = CShotChapter::itemPathOf(item);
+    if (!path.isEmpty()) {
+      action["item"] = path;
+    }
+  } else {
+    action["at"] = QJsonArray({double(pos.x()) / qMax(1, owner->width()), double(pos.y()) / qMax(1, owner->height())});
+  }
+  actions.append(action);
 }
 
 bool CShotRecorder::eventFilter(QObject* watched, QEvent* event) {
@@ -872,7 +1101,18 @@ bool CShotRecorder::eventFilter(QObject* watched, QEvent* event) {
   }
 
   const QEvent::Type type = event->type();
-  if (QEvent::MouseButtonPress != type && QEvent::MouseButtonRelease != type) {
+
+  // A context menu is asked for by an event of its own, never by the right button alone.
+  if (QEvent::ContextMenu == type) {
+    QWidget* widget = qobject_cast<QWidget*>(watched);
+    const QContextMenuEvent* request = static_cast<QContextMenuEvent*>(event);
+    if (nullptr != widget && !isIgnored(widget)) {
+      recordContextMenu(widget, request->pos());
+    }
+    return QObject::eventFilter(watched, event);
+  }
+
+  if (QEvent::MouseButtonPress != type && QEvent::MouseButtonRelease != type && QEvent::MouseButtonDblClick != type) {
     return QObject::eventFilter(watched, event);
   }
 
@@ -882,9 +1122,21 @@ bool CShotRecorder::eventFilter(QObject* watched, QEvent* event) {
     return QObject::eventFilter(watched, event);
   }
 
+  // What the writer picked in a menu is an action, and it has to be read before the menu closes.
+  if (QEvent::MouseButtonRelease == type && nullptr != qobject_cast<QMenu*>(widget)) {
+    recordMenuAction(widget, mouse->position().toPoint());
+    return QObject::eventFilter(watched, event);
+  }
+
+  if (QEvent::MouseButtonDblClick == type) {
+    pressWasDouble = true;
+    return QObject::eventFilter(watched, event);
+  }
+
   CCanvas* canvas = canvasHolding(widget);
   if (QEvent::MouseButtonPress == type) {
     pressWidget = widget;
+    pressPos = mouse->position().toPoint();
     pressedOnCanvas = false;
     pressItem.clear();
     if (nullptr != canvas) {
@@ -986,8 +1238,6 @@ int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx, const st
 }
 
 void CShotRecorder::reset(CShotContext& ctx) {
-  closeDetailPages(ctx);
-
   if (CCanvas* canvas = ctx.canvas(); nullptr != canvas) {
     if (CMouseNormal* mouse = canvas->findChild<CMouseNormal*>(); nullptr != mouse) {
       mouse->clearScreenOption();
@@ -1011,15 +1261,6 @@ void CShotRecorder::clear(const QJsonArray& actions, CShotContext& ctx) {
   }
   if (CMouseNormal* mouse = canvas->findChild<CMouseNormal*>(); nullptr != mouse) {
     mouse->clearScreenOption();
-  }
-
-  // A details page the scenario opened stays a page of the window, so the next picture would be
-  // taken with the tab bar this one added.
-  for (const QJsonValue& value : actions) {
-    if ("details" == value.toObject()["do"].toString()) {
-      closeDetailPages(ctx);
-      break;
-    }
   }
 
   // Opening an item's options gives a track a click focus, which changes the way it draws. The

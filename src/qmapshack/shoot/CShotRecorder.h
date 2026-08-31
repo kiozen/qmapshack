@@ -48,10 +48,12 @@ class QWidget;
    Pixels, zoom, window size and device pixel ratio never enter the recording, so a GUI change does
    not invalidate it - the same property that lets a JSON shot survive one.
 
-   That is why nothing here watches for a button press. A press is input; what it produced is
-   state, and the state is what the diff below finds. A button with no state to change is not
-   recordable, and that is the honest boundary rather than a replayed click that means nothing the
-   next time the dialog is laid out differently.
+   A press the diff has nothing to say about is recorded as the press itself - see recordPress() -
+   but only when what it landed on acts on a click, and always with what it hit so a replay that
+   would land elsewhere fails instead of photographing another state. Surfaces with a vocabulary of
+   their own never come to that: the map has a geographic point, a plot has a distance or a time
+   along the track, the icon grid has the icon's name and a workspace row's tool buttons have the
+   delegate's own button names.
  */
 class CShotRecorder : public QObject {
   Q_OBJECT
@@ -116,10 +118,15 @@ class CShotRecorder : public QObject {
   /**
      @brief The window arrangement as one action.
 
-     Dockers, their sizes and the window size decide how big a picture comes out, so they belong to
-     the state a picture is taken in, not to the chapter. Qt's own `saveState()` blob is what it
-     takes: which dockers are visible is expressible in the open, where they sit and how wide they
-     are is not, and a docker's width is exactly what decides a picture's width.
+     Which dockers are visible is expressible in the open, where they sit and how wide they are is
+     not, so Qt's own `saveState()` blob is what it takes - and a docker's width is exactly what
+     decides how much of a picture is left for the canvas.
+
+     **The window's own size is not part of it.** That is the shot's `size`, and one number with two
+     records drifts: a scenario recorded at one size and a rectangle dragged at another framed
+     different things, and the layout silently won. So the caller puts the window at the shot's size
+     first and the arrangement is restored into it - `saveState()` stores dock extents in pixels and
+     Qt distributes them across whatever width the window has when it is applied.
    */
   static QJsonObject layoutOf(CShotContext& ctx);
 
@@ -166,24 +173,42 @@ class CShotRecorder : public QObject {
   /// @brief Drop the click that opened this item's options, because a later one closed them again
   void forgetClickOn(const QString& item);
 
-  /// @brief Drop the step that opened this item's details, because the writer closed them again
-  void forgetDetailsOn(const QString& item);
+  /**
+     @brief Record the press itself, for a click the diff had nothing to say about.
+
+     The state diff is what a step is preferably made of - a selection, a driven control - because
+     it survives a layout change. A press that leaves no state behind used to be unrecordable, and
+     that was the boundary the writer kept walking into. This is the fallback under it: the widget
+     by address, the position as a fraction of it, and what it hit so a replay that would land
+     somewhere else fails instead of photographing another state.
+   */
+  void recordPress(bool twice);
+
+  /**
+     @brief Record a press on a surface that names what it hit, instead of a position.
+
+     A plot is addressed by the distance or the time along the track under the point, an icon grid
+     by the icon's name. Both survive a resize, which a fraction of the widget does not: a plot's
+     graph area moves with its axis labels, and the grid reflows to whatever width it is given.
+
+     @return true when the press belonged to such a surface and was recorded
+   */
+  bool recordNamedSurface(QWidget* widget);
+
+  /// @brief Record the menu entry the writer picked, which is an action and not a position
+  void recordMenuAction(QWidget* menu, const QPoint& pos);
+
+  /// @brief Record that the writer asked for a context menu here
+  void recordContextMenu(QWidget* widget, const QPoint& pos);
 
   /// @brief The workspace items expanded right now, by name path
   QSet<QString> expandedNow() const;
 
-  /**
-     @brief The workspace items whose details are a page of the window right now, by name path.
-
-     A track's and a project's details are not dialogs, they are pages the main window keeps until
-     they are closed - so they are state, and a picture of one has to be able to say it wants them.
-     What opens them is a press, which is exactly what this recorder does not watch, so the page
-     they add is found here instead.
-   */
-  QSet<QString> detailsNow() const;
-
   /// @return The workspace item's name path, empty when nothing is selected
   QString selectionNow() const;
+
+  /// @brief Listen to the workspace delegate, whose row buttons are no widgets and have no address
+  void watchRowButtons();
 
   CShotContext& ctx;
   QJsonArray actions;
@@ -194,12 +219,23 @@ class CShotRecorder : public QObject {
 
   QString lastSelection;
   QSet<QString> lastExpanded;
-  QSet<QString> lastDetails;
   QHash<QString, QVariant> lastInputs;
 
   /// What the writer pressed on. An input that changed without being pressed was changed by the
   /// application, and driving that back is driving an output.
   QPointer<QWidget> pressWidget;
+
+  /// Where the writer pressed, in the widget's own coordinates. Kept because the fallback needs
+  /// it after the application has handled the release.
+  QPoint pressPos;
+  /// True while the release that follows was preceded by a double click on the same widget
+  bool pressWasDouble = false;
+
+  /// The workspace row button the delegate reported for the press being handled, and the row it
+  /// belongs to. Held until the queued capture, so the step lands after the selection the same
+  /// click produced.
+  QString pressButtonName;
+  QString pressButtonItem;
 
   /// Where the writer pressed on the map, and what was under it - read before the application
   /// handles the press, because handling it is what changes the answer
