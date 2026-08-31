@@ -42,6 +42,9 @@
 #include "shoot/CShotChapter.h"
 #include "shoot/CShotContext.h"
 #include "shoot/CShotFixture.h"
+#ifdef QMS_SHOT_PROBE
+#include "shoot/CShotProbe.h"
+#endif
 #include "shoot/CShotRegistry.h"
 #include "shoot/CShotWriter.h"
 
@@ -89,6 +92,9 @@ CShotRunner::task_e CShotRunner::taskFromName(const QString& name) {
   if (name == "explore") {
     return eTaskExplore;
   }
+  if (name == "probe") {
+    return eTaskProbe;
+  }
   return eTaskChapter;
 }
 
@@ -133,6 +139,9 @@ void CShotRunner::slotRun() {
     case eTaskChapter:
       runChapter();
       break;
+    case eTaskProbe:
+      runProbe();
+      break;
   }
 
   qApp->quit();
@@ -146,6 +155,22 @@ void CShotRunner::writeReport(const QString& name, const QJsonObject& report) {
     return;
   }
   file.write(QJsonDocument(report).toJson(QJsonDocument::Indented));
+}
+
+void CShotRunner::runProbe() {
+#ifdef QMS_SHOT_PROBE
+  // The same fixture a chapter run shoots against; the probe drives the items it puts there.
+  CShotWriter writer(outDir, "en");
+  CShotContext ctx(writer, "en");
+  CShotFixture::build(ctx);
+
+  const QJsonObject& report = CShotProbe::run(outDir);
+  writeReport("probe.json", report);
+  failures_ += report["failures"].toInt();
+#else
+  qWarning() << "shoot: this build has no probe; configure with -DQMS_SHOT_PROBE=ON";
+  failures_++;
+#endif
 }
 
 void CShotRunner::runChapter() {

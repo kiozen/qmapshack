@@ -33,7 +33,7 @@
 class CShotRunner : public QObject {
   Q_OBJECT
  public:
-  enum task_e { eTaskChapter, eTaskList, eTaskInspect, eTaskExplore };
+  enum task_e { eTaskChapter, eTaskList, eTaskInspect, eTaskExplore, eTaskProbe };
 
   /// @return eTaskChapter for an unknown name
   static task_e taskFromName(const QString& name);
@@ -59,6 +59,9 @@ class CShotRunner : public QObject {
 
   /// @brief Shoot the JSON chapter file named by --shoot-target
   void runChapter();
+
+  /// @brief Throwaway: can the application be driven by synthesized input alone? See CShotProbe
+  void runProbe();
 
   /// @brief Write a machine readable result beside the images; shots.py reads this, not stdout
   void writeReport(const QString& name, const QJsonObject& report);
