@@ -19,10 +19,15 @@
 #include "shoot/CShotRecorder.h"
 
 #include <QAbstractButton>
+#include <QAbstractItemView>
+#include <QAbstractScrollArea>
+#include <QAction>
 #include <QApplication>
 #include <QComboBox>
+#include <QContextMenuEvent>
 #include <QDebug>
 #include <QDoubleSpinBox>
+#include <QEventLoop>
 #include <QGroupBox>
 #include <QJsonObject>
 #include <QLineEdit>
@@ -33,8 +38,12 @@
 #include <QStringList>
 #include <QTabWidget>
 #include <QTimer>
+#include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QWidget>
+#include <QtTest/QtTest>
+#include <functional>
+#include <memory>
 #include <utility>
 
 #include "CMainWindow.h"
@@ -198,6 +207,355 @@ bool clickOnMap(const QJsonObject& action, CShotContext& ctx) {
   }
   return true;
 }
+// --- synthesized input ---------------------------------------------------------------------------
+
+/// @return The widget an address names, or nullptr after warning about it
+QWidget* addressedWidget(const QJsonObject& action, CShotContext& ctx) {
+  const QString& address = action["widget"].toString();
+  QWidget* widget = CShotChapter::resolve(ctx.mainWindow(), address);
+  if (nullptr == widget) {
+    qWarning() << "shoot: the scenario has no widget at" << address;
+  }
+  return widget;
+}
+
+/**
+   @brief Where a recorded position lands in this widget now.
+
+   A fraction of the widget, never a pixel: the same layout comes out two pixels taller on Windows
+   than on Linux, and a widget that is laid out at all can be a different size on the next run.
+ */
+QPoint pointIn(const QWidget* widget, const QJsonArray& at) {
+  if (2 != at.size()) {
+    return QPoint(widget->width() / 2, widget->height() / 2);
+  }
+  return QPoint(qRound(at.at(0).toDouble() * widget->width()), qRound(at.at(1).toDouble() * widget->height()));
+}
+
+/**
+   @brief What sits at this point of the widget.
+
+   A position is never replayed on its own; this is what it is checked against. A row of an item
+   view answers with its name path, anything else with the address of the child under the point, so
+   a step that would land somewhere else fails instead of photographing the wrong state.
+ */
+QString hitAt(QWidget* widget, const QPoint& pos) {
+  if (const QAbstractItemView* view = qobject_cast<const QAbstractItemView*>(widget); nullptr != view) {
+    const QModelIndex& index = view->indexAt(pos);
+    const QTreeWidget* tree = qobject_cast<const QTreeWidget*>(widget);
+    if (index.isValid() && nullptr != tree) {
+      return CShotChapter::itemPathOf(tree->itemFromIndex(index));
+    }
+    return index.isValid() ? QString::number(index.row()) : QString();
+  }
+  QWidget* child = widget->childAt(pos);
+  return (nullptr == child) ? CShotChapter::addressOf(nullptr, widget) : CShotChapter::addressOf(widget, child);
+}
+
+/// @brief The viewport a position is delivered to, which for a scroll area is not the widget itself
+QWidget* inputTarget(QWidget* widget) {
+  QAbstractScrollArea* area = qobject_cast<QAbstractScrollArea*>(widget);
+  return (nullptr == area) ? widget : area->viewport();
+}
+
+/// @return Where a workspace row sits, after putting it on screen; invalid when it cannot be found
+QRect rowRect(CShotContext& ctx, const QString& path) {
+  CGisListWks* list = ctx.wksList();
+  QTreeWidgetItem* item = CShotChapter::resolveItemPath(list, path);
+  if (nullptr == list || nullptr == item) {
+    return {};
+  }
+  for (QTreeWidgetItem* up = item->parent(); nullptr != up; up = up->parent()) {
+    up->setExpanded(true);
+  }
+  list->scrollToItem(item);
+  CShotWriter::settle(list);
+  return list->visualItemRect(item);
+}
+
+/**
+   @brief Click, and double click if asked.
+
+   The plain click before a double click is not politeness: QAbstractItemView drops a double click
+   whose index does not match the one a press recorded, so a bare double click emits nothing at all
+   and the coordinates look wrong when they are right.
+ */
+void clickOn(QWidget* target, const QPoint& pos, bool twice) {
+  QTest::mouseClick(target, Qt::LeftButton, {}, pos);
+  if (twice) {
+    QTest::mouseDClick(target, Qt::LeftButton, {}, pos);
+  }
+}
+
+/**
+   @brief Ask for a context menu the way the window system does.
+
+   A synthesized right click is not enough: a list on Qt::CustomContextMenu raises
+   customContextMenuRequested from a QContextMenuEvent, which the platform sends separately, and it
+   is delivered to the widget under the pointer - the viewport, not the scroll area.
+ */
+void requestContextMenu(QWidget* target, const QPoint& pos) {
+  QContextMenuEvent event(QContextMenuEvent::Mouse, pos, target->mapToGlobal(pos));
+  QApplication::sendEvent(target, &event);
+}
+
+/**
+   @brief Perform one step of a scenario.
+
+   @param wantedTab  out: the central tab the arrangement asks for, applied once every step has run
+   @return The number of failures
+ */
+int applyAction(const QJsonObject& action, CShotContext& ctx, int& wantedTab) {
+  int failures = 0;
+  const QString& what = action["do"].toString();
+
+  if ("select" == what || "expand" == what) {
+    const QString& path = action["item"].toString();
+    QTreeWidgetItem* item = CShotChapter::resolveItemPath(ctx.wksList(), path);
+    if (nullptr == item) {
+      qWarning() << "shoot: the scenario has no item" << path;
+      failures++;
+      return failures;
+    }
+    for (QTreeWidgetItem* up = item->parent(); nullptr != up; up = up->parent()) {
+      up->setExpanded(true);
+    }
+    if ("expand" == what) {
+      item->setExpanded(true);
+    } else {
+      ctx.wksList()->setCurrentItem(item);
+    }
+    return failures;
+  }
+
+  if ("details" == what) {
+    const QString& path = action["item"].toString();
+    QTreeWidgetItem* item = CShotChapter::resolveItemPath(ctx.wksList(), path);
+    // A track and a project are the two whose details are a page of the window. Every other
+    // edit() runs a modal dialog, which a headless run would sit in forever - such a picture is
+    // an exposure, not a scenario.
+    if (IGisProject* project = dynamic_cast<IGisProject*>(item); nullptr != project) {
+      project->edit();
+    } else if (CGisItemTrk* trk = dynamic_cast<CGisItemTrk*>(item); nullptr != trk) {
+      trk->edit();
+    } else {
+      qWarning() << "shoot:" << path << "has no details this scenario can open";
+      failures++;
+    }
+    return failures;
+  }
+
+  if ("set" == what) {
+    const QString& address = action["widget"].toString();
+    const QString& property = action["property"].toString();
+    QWidget* widget = CShotChapter::resolve(ctx.mainWindow(), address);
+    if (!CShotChapter::driveProperty(widget, property, action["value"].toVariant())) {
+      qWarning() << "shoot: the scenario cannot set" << address << property << "to" << action["value"].toVariant();
+      failures++;
+    }
+    return failures;
+  }
+
+  if ("layout" == what) {
+    CMainWindow* main = ctx.mainWindow();
+    if (nullptr == main) {
+      qWarning() << "shoot: there is no window to arrange";
+      failures++;
+      return failures;
+    }
+    const QByteArray& geometry = QByteArray::fromBase64(action["geometry"].toString().toLatin1());
+    const QByteArray& state = QByteArray::fromBase64(action["state"].toString().toLatin1());
+    if (!geometry.isEmpty()) {
+      main->restoreGeometry(geometry);
+    }
+    if (!state.isEmpty()) {
+      main->restoreState(state);
+    }
+    if (action.contains("tab")) {
+      wantedTab = action["tab"].toInt();
+    }
+    CShotWriter::settle(main);
+    return failures;
+  }
+
+  if ("view" == what) {
+    CCanvas* canvas = ctx.canvas();
+    if (nullptr == canvas) {
+      qWarning() << "shoot: there is no map to set up";
+      failures++;
+      return failures;
+    }
+
+    if (action.contains("zoom")) {
+      // The level first: where a point sits on screen depends on it.
+      canvas->zoom(action["zoom"].toInt());
+      QPointF focus(action["lon"].toDouble(), action["lat"].toDouble());
+      focus *= DEG_TO_RAD;
+      canvas->convertRad2Px(focus);
+      // moveMap() shifts the focus by a pixel delta, so ask for the one that carries the recorded
+      // point to the middle of the canvas, which is where the focus is.
+      canvas->moveMap(QPointF(canvas->width() / 2.0, canvas->height() / 2.0) - focus);
+    } else {
+      // Recorded before the zoom level was stored. zoomTo() refits a rectangle to the canvas
+      // aspect and snaps it to a level, so the view comes out near the recorded one and never on
+      // it: every pixel of the map lands elsewhere and a stored rectangle frames the wrong thing.
+      // Built anyway and counted as a failure - a build must refuse a picture like that, and
+      // documentation mode has to put the state on screen so the writer can repair the scenario.
+      const QJsonArray& area = action["area"].toArray();
+      if (4 == area.size()) {
+        const QRectF degrees = QRectF(QPointF(area.at(0).toDouble(), area.at(1).toDouble()),
+                                      QPointF(area.at(2).toDouble(), area.at(3).toDouble()))
+                                   .normalized();
+        canvas->zoomTo(QRectF(degrees.topLeft() * DEG_TO_RAD, degrees.bottomRight() * DEG_TO_RAD));
+      }
+      qWarning() << "shoot: this scenario stores a map rectangle, not a view. Select it in the "
+                    "panel and press Update, then take its pictures again.";
+      failures++;
+    }
+
+    canvas->waitForDrawContexts();
+    return failures;
+  }
+
+  if ("click" == what && action.contains("lat")) {
+    if (!clickOnMap(action, ctx)) {
+      failures++;
+    }
+    return failures;
+  }
+
+  if ("click" == what || "dclick" == what) {
+    const bool twice = ("dclick" == what);
+
+    // A workspace row is named, so it needs no coordinates at all.
+    const QString& path = action["item"].toString();
+    if (!path.isEmpty()) {
+      const QRect& rect = rowRect(ctx, path);
+      if (!rect.isValid()) {
+        qWarning() << "shoot: the scenario has no item" << path;
+        return failures + 1;
+      }
+      clickOn(ctx.wksList()->viewport(), rect.center(), twice);
+      return failures;
+    }
+
+    QWidget* widget = addressedWidget(action, ctx);
+    if (nullptr == widget) {
+      return failures + 1;
+    }
+    QWidget* target = inputTarget(widget);
+    const QPoint& pos = pointIn(target, action["at"].toArray());
+
+    // A position is never acted on unheard: what it hit when it was recorded has to still be there,
+    // or the picture would show another state and say nothing about it.
+    const QString& wanted = action["hit"].toString();
+    if (!wanted.isEmpty() && hitAt(target, pos) != wanted) {
+      qWarning() << "shoot: the scenario points at" << wanted << "and finds" << hitAt(target, pos);
+      return failures + 1;
+    }
+    clickOn(target, pos, twice);
+    return failures;
+  }
+
+  if ("trigger" == what) {
+    const QString& name = action["action"].toString();
+    QObject* owner = action.contains("widget") ? addressedWidget(action, ctx) : ctx.mainWindow();
+    QAction* target = (nullptr == owner) ? nullptr : owner->findChild<QAction*>(name);
+    if (nullptr == target) {
+      qWarning() << "shoot: the scenario has no action called" << name;
+      return failures + 1;
+    }
+    if (!target->isEnabled()) {
+      qWarning() << "shoot:" << name << "is disabled in this state";
+      return failures + 1;
+    }
+    target->trigger();
+    return failures;
+  }
+
+  if ("menu" == what) {
+    QWidget* widget = addressedWidget(action, ctx);
+    if (nullptr == widget) {
+      return failures + 1;
+    }
+    QWidget* target = inputTarget(widget);
+    const QString& path = action["item"].toString();
+    QPoint pos;
+    if (path.isEmpty()) {
+      pos = pointIn(target, action["at"].toArray());
+    } else {
+      const QRect& rect = rowRect(ctx, path);
+      if (!rect.isValid()) {
+        qWarning() << "shoot: the scenario has no item" << path;
+        return failures + 1;
+      }
+      QTest::mouseClick(target, Qt::LeftButton, {}, rect.center());
+      pos = rect.center();
+    }
+    requestContextMenu(target, pos);
+    return failures;
+  }
+
+  if ("key" == what) {
+    QWidget* widget = addressedWidget(action, ctx);
+    if (nullptr == widget) {
+      return failures + 1;
+    }
+    QTest::keyClicks(widget, action["keys"].toString());
+    return failures;
+  }
+
+  qWarning() << "shoot: the scenario asks for" << what << "which this build does not know";
+  failures++;
+
+  return failures;
+}
+
+/// @brief Choose the central tab the arrangement asked for, now that every page it counted exists
+int applyWantedTab(CShotContext& ctx, int wantedTab) {
+  int failures = 0;
+  if (NOIDX != wantedTab) {
+    QTabWidget* tabs = centralTabs(ctx);
+    if (nullptr == tabs || wantedTab >= tabs->count()) {
+      qWarning() << "shoot: the scenario was arranged around a tab" << wantedTab << "this window has not got";
+      failures++;
+    } else {
+      tabs->setCurrentIndex(wantedTab);
+      CShotWriter::settle(tabs);
+    }
+  }
+
+  return failures;
+}
+
+/// @brief Close whatever runs an event loop on top of the application, so a nested one can return
+void closeBlockingWindow() {
+  if (QWidget* popup = QApplication::activePopupWidget(); nullptr != popup) {
+    popup->close();
+  }
+  if (QWidget* modal = QApplication::activeModalWidget(); nullptr != modal) {
+    modal->close();
+  }
+}
+
+/// A scenario that opens something no later step closes would leave replay() below that dialog's
+/// own event loop. The deadline closes it, counts a failure and returns instead of hanging a build.
+constexpr int kReplayTimeoutMs = 60000;
+
+/// @brief What one replay carries, kept alive for any step still queued when it gives up
+struct replay_t {
+  QJsonArray actions;
+  CShotContext* ctx = nullptr;
+  qsizetype next = 0;
+  int failures = 0;
+  int wantedTab = NOIDX;
+  bool abandoned = false;
+  /// How many steps are on the stack. More than none means one of them has not returned yet.
+  int running = 0;
+  std::function<void()> whenReady;
+  std::function<void()> pump;
+  QEventLoop loop;
+};
 }  // namespace
 
 CShotRecorder::CShotRecorder(CShotContext& ctx, QObject* parent) : QObject(parent), ctx(ctx) {}
@@ -562,148 +920,69 @@ bool CShotRecorder::eventFilter(QObject* watched, QEvent* event) {
   return QObject::eventFilter(watched, event);
 }
 
-int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx) {
-  int failures = 0;
-  // A `details` step adds a page the arrangement was recorded with, and it does not exist yet while
-  // that arrangement is applied. A tab index past the last page is silently ignored, so the central
-  // tab is chosen once every step has run.
-  int wantedTab = NOIDX;
+int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx, const std::function<void()>& whenReady) {
+  // Steps are scheduled, never called one after another. A step may enter a modal dialog, a popup
+  // menu or a nested progress loop, and the event loop running inside it delivers the step after
+  // it - so the rest of the scenario still happens. A `for` loop sits inside exec() until somebody
+  // closes what it opened, which is why every such window used to need an exposure of its own.
+  const std::shared_ptr<replay_t> state = std::make_shared<replay_t>();
+  state->actions = actions;
+  state->ctx = &ctx;
+  state->whenReady = whenReady;
 
-  for (const QJsonValue& value : actions) {
-    const QJsonObject& action = value.toObject();
-    const QString& what = action["do"].toString();
-
-    if ("select" == what || "expand" == what) {
-      const QString& path = action["item"].toString();
-      QTreeWidgetItem* item = CShotChapter::resolveItemPath(ctx.wksList(), path);
-      if (nullptr == item) {
-        qWarning() << "shoot: the scenario has no item" << path;
-        failures++;
-        continue;
-      }
-      for (QTreeWidgetItem* up = item->parent(); nullptr != up; up = up->parent()) {
-        up->setExpanded(true);
-      }
-      if ("expand" == what) {
-        item->setExpanded(true);
-      } else {
-        ctx.wksList()->setCurrentItem(item);
-      }
-      continue;
+  // Weak, or the state would own the lambda that owns the state.
+  const std::weak_ptr<replay_t> weak = state;
+  state->pump = [weak]() {
+    const std::shared_ptr<replay_t> s = weak.lock();
+    if (nullptr == s || s->abandoned) {
+      return;
+    }
+    if (s->running > 0 && nullptr == QApplication::activeModalWidget() &&
+        nullptr == QApplication::activePopupWidget()) {
+      // A step has not returned and nothing with an event loop of its own is up, so it is spinning
+      // the loop itself - CShotWriter::settle(), waitForDrawContexts(). Let it finish; going on
+      // here would run the next step in the middle of this one.
+      QTimer::singleShot(1, qApp, s->pump);
+      return;
     }
 
-    if ("details" == what) {
-      const QString& path = action["item"].toString();
-      QTreeWidgetItem* item = CShotChapter::resolveItemPath(ctx.wksList(), path);
-      // A track and a project are the two whose details are a page of the window. Every other
-      // edit() runs a modal dialog, which a headless run would sit in forever - such a picture is
-      // an exposure, not a scenario.
-      if (IGisProject* project = dynamic_cast<IGisProject*>(item); nullptr != project) {
-        project->edit();
-      } else if (CGisItemTrk* trk = dynamic_cast<CGisItemTrk*>(item); nullptr != trk) {
-        trk->edit();
-      } else {
-        qWarning() << "shoot:" << path << "has no details this scenario can open";
-        failures++;
-      }
-      continue;
+    if (s->next < s->actions.size()) {
+      const QJsonObject& action = s->actions.at(s->next++).toObject();
+      // Queued before the step runs, not after: a step that opens a modal dialog or a popup menu
+      // does not return until it is closed, and it is the loop running inside it that delivers
+      // this. Queue it afterwards and the first such step stalls the whole scenario.
+      QTimer::singleShot(0, qApp, s->pump);
+      s->running++;
+      s->failures += applyAction(action, *s->ctx, s->wantedTab);
+      s->running--;
+      return;
     }
-
-    if ("set" == what) {
-      const QString& address = action["widget"].toString();
-      const QString& property = action["property"].toString();
-      QWidget* widget = CShotChapter::resolve(ctx.mainWindow(), address);
-      if (!CShotChapter::driveProperty(widget, property, action["value"].toVariant())) {
-        qWarning() << "shoot: the scenario cannot set" << address << property << "to" << action["value"].toVariant();
-        failures++;
-      }
-      continue;
+    s->failures += applyWantedTab(*s->ctx, s->wantedTab);
+    if (s->whenReady) {
+      s->whenReady();
     }
+    // The picture is taken; whatever a step opened has to go before this loop, which sits below its
+    // event loop, can return at all.
+    closeBlockingWindow();
+    s->loop.quit();
+  };
 
-    if ("layout" == what) {
-      CMainWindow* main = ctx.mainWindow();
-      if (nullptr == main) {
-        qWarning() << "shoot: there is no window to arrange";
-        failures++;
-        continue;
-      }
-      const QByteArray& geometry = QByteArray::fromBase64(action["geometry"].toString().toLatin1());
-      const QByteArray& state = QByteArray::fromBase64(action["state"].toString().toLatin1());
-      if (!geometry.isEmpty()) {
-        main->restoreGeometry(geometry);
-      }
-      if (!state.isEmpty()) {
-        main->restoreState(state);
-      }
-      if (action.contains("tab")) {
-        wantedTab = action["tab"].toInt();
-      }
-      CShotWriter::settle(main);
-      continue;
-    }
+  QTimer deadline;
+  deadline.setSingleShot(true);
+  QObject::connect(&deadline, &QTimer::timeout, &state->loop, [state]() {
+    qWarning() << "shoot: the scenario did not finish - a step opened something no later step closed";
+    state->failures++;
+    closeBlockingWindow();
+    state->loop.quit();
+  });
+  deadline.start(kReplayTimeoutMs);
 
-    if ("view" == what) {
-      CCanvas* canvas = ctx.canvas();
-      if (nullptr == canvas) {
-        qWarning() << "shoot: there is no map to set up";
-        failures++;
-        continue;
-      }
+  QTimer::singleShot(0, qApp, state->pump);
+  state->loop.exec();
 
-      if (action.contains("zoom")) {
-        // The level first: where a point sits on screen depends on it.
-        canvas->zoom(action["zoom"].toInt());
-        QPointF focus(action["lon"].toDouble(), action["lat"].toDouble());
-        focus *= DEG_TO_RAD;
-        canvas->convertRad2Px(focus);
-        // moveMap() shifts the focus by a pixel delta, so ask for the one that carries the recorded
-        // point to the middle of the canvas, which is where the focus is.
-        canvas->moveMap(QPointF(canvas->width() / 2.0, canvas->height() / 2.0) - focus);
-      } else {
-        // Recorded before the zoom level was stored. zoomTo() refits a rectangle to the canvas
-        // aspect and snaps it to a level, so the view comes out near the recorded one and never on
-        // it: every pixel of the map lands elsewhere and a stored rectangle frames the wrong thing.
-        // Built anyway and counted as a failure - a build must refuse a picture like that, and
-        // documentation mode has to put the state on screen so the writer can repair the scenario.
-        const QJsonArray& area = action["area"].toArray();
-        if (4 == area.size()) {
-          const QRectF degrees = QRectF(QPointF(area.at(0).toDouble(), area.at(1).toDouble()),
-                                        QPointF(area.at(2).toDouble(), area.at(3).toDouble()))
-                                     .normalized();
-          canvas->zoomTo(QRectF(degrees.topLeft() * DEG_TO_RAD, degrees.bottomRight() * DEG_TO_RAD));
-        }
-        qWarning() << "shoot: this scenario stores a map rectangle, not a view. Select it in the "
-                      "panel and press Update, then take its pictures again.";
-        failures++;
-      }
-
-      canvas->waitForDrawContexts();
-      continue;
-    }
-
-    if ("click" == what) {
-      if (!clickOnMap(action, ctx)) {
-        failures++;
-      }
-      continue;
-    }
-
-    qWarning() << "shoot: the scenario asks for" << what << "which this build does not know";
-    failures++;
-  }
-
-  if (NOIDX != wantedTab) {
-    QTabWidget* tabs = centralTabs(ctx);
-    if (nullptr == tabs || wantedTab >= tabs->count()) {
-      qWarning() << "shoot: the scenario was arranged around a tab" << wantedTab << "this window has not got";
-      failures++;
-    } else {
-      tabs->setCurrentIndex(wantedTab);
-      CShotWriter::settle(tabs);
-    }
-  }
-
-  return failures;
+  // A step queued before the deadline gave up must find nothing left to do.
+  state->abandoned = true;
+  return state->failures;
 }
 
 void CShotRecorder::reset(CShotContext& ctx) {

@@ -18,6 +18,7 @@
 
 #include "shoot/CShotChapter.h"
 
+#include <QApplication>
 #include <QDebug>
 #include <QDockWidget>
 #include <QFile>
@@ -106,6 +107,21 @@ bool writeChapter(const QString& file, const QJsonObject& chapter) {
   }
   out.write(QJsonDocument(chapter).toJson(QJsonDocument::Indented));
   return true;
+}
+
+/**
+   @brief What a picture of "the application" means: whatever a scenario left on top of it.
+
+   A modal dialog or a popup menu a step opened is the picture; the window behind it is not.
+ */
+QWidget* topmost(CMainWindow* main) {
+  if (QWidget* popup = QApplication::activePopupWidget(); nullptr != popup) {
+    return popup;
+  }
+  if (QWidget* modal = QApplication::activeModalWidget(); nullptr != modal) {
+    return modal;
+  }
+  return main;
 }
 
 /**
@@ -457,66 +473,80 @@ int CShotChapter::shootOne(const QJsonObject& shot, CShotContext& ctx) {
       CShotWriter::settle(main);
     }
     performed = ctx.scenarios().value(scenario).toArray();
-    failures += CShotRecorder::replay(performed, ctx);
+  }
+
+  // Taken as the scenario's last step, never after it. A step that opened a modal dialog is still
+  // inside its exec(); by the time replay() returns the dialog is gone and the picture would be of
+  // the window behind it.
+  const auto takePicture = [&]() {
+    QWidget* widget = nullptr;
+    bool owned = false;
+    if (shot.contains("exposure")) {
+      widget = CShotRegistry::self().buildExposure(shot["exposure"].toString(), ctx, ctx.parent());
+      owned = true;
+      if (nullptr == widget) {
+        qWarning() << "shoot:" << id << "has no exposure" << shot["exposure"].toString();
+        failures++;
+        return;
+      }
+    } else {
+      // A shot with no widget of its own photographs whatever a step of the scenario put on top -
+      // a modal dialog, a popup menu - and the main window when nothing did.
+      widget = shot["widget"].toString().isEmpty() ? topmost(main) : resolve(main, shot["widget"].toString());
+      if (nullptr == widget) {
+        qWarning() << "shoot:" << id << "found no widget at" << shot["widget"].toString();
+        failures++;
+        return;
+      }
+    }
+
+    // Drive inputs by name. Unchecked by the compiler on purpose; an unknown name fails here. A key
+    // without a dot is a property of the photographed widget itself, which is how a tab page is
+    // named when the .ui file left the tab widget unnamed.
+    const QJsonObject& set = shot["set"].toObject();
+    for (auto it = set.constBegin(); it != set.constEnd(); ++it) {
+      const QString& name = it.key().section('.', 0, 0);
+      const QString& property = it.key().contains('.') ? it.key().section('.', 1) : it.key();
+      // The widget part is an address relative to the photographed widget, so an unnamed tab widget
+      // is reachable as QTabWidget#0 just like anywhere else.
+      QObject* driven = it.key().contains('.') ? resolve(widget, name) : widget;
+      if (!driveProperty(driven, property, it.value().toVariant())) {
+        qWarning() << "shoot:" << id << "cannot set" << it.key() << "to" << it.value().toVariant();
+        failures++;
+      }
+    }
+    CShotWriter::settle(widget);
 
     // The scenario's own layout owns the window size from here on. Resizing again at render time
     // would lay the canvas out afresh and move the map under a rectangle that was measured against
     // this state - documentation mode never resizes twice, which is why it looked right there.
-    if (nullptr != main && shot["widget"].toString().isEmpty()) {
+    // Only for the main window: a dialog a step opened has a size of its own and rendering it at
+    // the window's would stretch it.
+    if (!scenario.isEmpty() && widget == main) {
       renderSize = main->size();
     }
-  }
 
-  QWidget* widget = nullptr;
-  bool owned = false;
-  if (shot.contains("exposure")) {
-    widget = CShotRegistry::self().buildExposure(shot["exposure"].toString(), ctx, ctx.parent());
-    owned = true;
-    if (nullptr == widget) {
-      qWarning() << "shoot:" << id << "has no exposure" << shot["exposure"].toString();
-      return failures + 1;
+    // Only a window can be given a size. Anything inside the main window is sized by the layout, so
+    // resizing it here would be undone at the next layout pass and the picture would not match the
+    // number in the file. What decides such a picture's size is the chapter's stored arrangement.
+    if (!widget->isWindow() && renderSize.isValid()) {
+      renderSize = QSize();
     }
-  } else {
-    widget = resolve(main, shot["widget"].toString());
-    if (nullptr == widget) {
-      qWarning() << "shoot:" << id << "found no widget at" << shot["widget"].toString();
-      return failures + 1;
-    }
-  }
 
-  // Drive inputs by name. Unchecked by the compiler on purpose; an unknown name fails here. A key
-  // without a dot is a property of the photographed widget itself, which is how a tab page is
-  // named when the .ui file left the tab widget unnamed.
-  const QJsonObject& set = shot["set"].toObject();
-  for (auto it = set.constBegin(); it != set.constEnd(); ++it) {
-    const QString& name = it.key().section('.', 0, 0);
-    const QString& property = it.key().contains('.') ? it.key().section('.', 1) : it.key();
-    // The widget part is an address relative to the photographed widget, so an unnamed tab widget
-    // is reachable as QTabWidget#0 just like anywhere else.
-    QObject* driven = it.key().contains('.') ? resolve(widget, name) : widget;
-    if (!driveProperty(driven, property, it.value().toVariant())) {
-      qWarning() << "shoot:" << id << "cannot set" << it.key() << "to" << it.value().toVariant();
+    ctx.shot(widget, renderSize);
+    if (ctx.cropMissed()) {
+      qWarning() << "shoot:" << id << "region does not fit the picture";
       failures++;
     }
-  }
-  CShotWriter::settle(widget);
+    ctx.setCrop({});
+    if (owned) {
+      delete widget;
+    }
+  };
 
-  // Only a window can be given a size. Anything inside the main window is sized by the layout, so
-  // resizing it here would be undone at the next layout pass and the picture would not match the
-  // number in the file. What decides such a picture's size is the chapter's stored arrangement.
-  if (!widget->isWindow() && renderSize.isValid()) {
-    renderSize = QSize();
-  }
-
-  ctx.shot(widget, renderSize);
-  if (ctx.cropMissed()) {
-    qWarning() << "shoot:" << id << "region does not fit the picture";
-    failures++;
-  }
-  ctx.setCrop({});
-  if (owned) {
-    delete widget;
-  }
+  // Always through the queue, with or without a scenario: an empty one drains at once and the
+  // picture is taken the same way, so there is one path and not two.
+  failures += CShotRecorder::replay(performed, ctx, takePicture);
   return failures;
 }
 
