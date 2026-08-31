@@ -157,12 +157,15 @@ class CGisListWks : public QTreeWidget {
   void migrateDB3to4();
   void migrateDB4to5();
   void setVisibilityOnMap(bool visible);
-  QAction* addSortAction(QObject* parent, QActionGroup* actionGroup, const QString& icon, const QString& text,
-                         IGisProject::sorting_folder_e mode);
+  QAction* addSortAction(const char* id, QObject* parent, QActionGroup* actionGroup, const QString& icon,
+                         const QString& text, IGisProject::sorting_folder_e mode);
 
+  /// @param id  objectName, always the member this is assigned to. The text is translated and is
+  ///            therefore no address; a shot or a scenario names the action by this.
   template <typename Func>
-  QAction* addAction(const QIcon& icon, const QString& name, QObject* parent, Func slot) {
+  QAction* addAction(const char* id, const QIcon& icon, const QString& name, QObject* parent, Func slot) {
     QAction* action = new QAction(icon, name, parent);
+    action->setObjectName(QString::fromLatin1(id));
     connect(action, &QAction::triggered, this, slot);
     return action;
   }
