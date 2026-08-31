@@ -167,6 +167,11 @@ qms_add_flag_if_supported(-Woverloaded-virtual)
 # Find all required packages and setup internal variables
 ###############################################################################################
 # Core5Compat provides QTextCodec, which decodes the Garmin codepages QStringConverter cannot.
+# Throwaway, for the input-replay experiment only: it links Qt6::Test into the application, which
+# is a testing library and has no business in a release. If the experiment succeeds this becomes
+# the switch that gates the whole shoot/ subsystem, not a probe of its own.
+option(QMS_SHOT_PROBE "Build the synthesized-input probe (links Qt6::Test)" OFF)
+
 find_package(Qt6 6.8 REQUIRED COMPONENTS
     Core
     Core5Compat
@@ -183,6 +188,10 @@ find_package(Qt6 6.8 REQUIRED COMPONENTS
     Widgets
     Xml
 )
+
+if(QMS_SHOT_PROBE)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Test)
+endif()
 
 qt_standard_project_setup(
     I18N_TRANSLATED_LANGUAGES ca cs de es fr hr it nl ru

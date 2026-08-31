@@ -1058,6 +1058,13 @@ else(Qt6DBus_FOUND)
     set(DBUS_LIB)
 endif(Qt6DBus_FOUND)
 
+if(QMS_SHOT_PROBE)
+    # Throwaway; see the option in the top level CMakeLists.
+    target_sources(${APPLICATION_NAME} PRIVATE shoot/CShotProbe.cpp shoot/CShotProbe.h)
+    target_compile_definitions(${APPLICATION_NAME} PRIVATE QMS_SHOT_PROBE)
+    target_link_libraries(${APPLICATION_NAME} PRIVATE Qt6::Test)
+endif()
+
 target_link_libraries(${APPLICATION_NAME} PRIVATE
     qms_options
     svgticonengine

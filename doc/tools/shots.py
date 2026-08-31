@@ -11,6 +11,7 @@ binary, so renaming a widget breaks the build rather than silently producing a s
   shots.py list                  every available shot id, with a preview
   shots.py inspect <id>          dump a widget's children and their settable properties
   shots.py explore <id>          report which controls actually change the widget
+  shots.py probe                 throwaway: is the app drivable by synthesized input?
 
 `diff` and `update` are deliberately absent: they mean nothing until the output is byte-stable,
 which is the determinism stage of the plan.
@@ -179,18 +180,24 @@ def find_binary(explicit):
     sys.exit(f"no QMapShack in {REPO / 'build' / 'bin'}; build this checkout, or pass --binary")
 
 
-def screen_config(scratch):
+def screen_config(scratch, dpr=None):
     """The offscreen platform argument that gives the run a screen of its own.
 
     The file is named relative to the working directory - see SCREEN_FILE for why it cannot be the
     absolute path it sits at.
+
+    `dpr` pretends the run is on a HiDPI screen. A writer's machine is one or is not, and the
+    pictures have to come out the same either way, so it is a knob rather than a constant.
     """
-    (Path(scratch) / SCREEN_FILE).write_text(json.dumps({"screens": [SCREEN]}))
+    screen = dict(SCREEN)
+    if dpr is not None:
+        screen["dpr"] = dpr
+    (Path(scratch) / SCREEN_FILE).write_text(json.dumps({"screens": [screen]}))
     return f"offscreen:configfile={SCREEN_FILE}"
 
 
 def run(binary, out_dir, task, target=None, only=None, verbose=False, chapter=None, scenario=None,
-        config_of=NOT_GIVEN):
+        config_of=NOT_GIVEN, allow_failure=False, dpr=None):
     """Run one shoot task and return the report the application wrote."""
     # Absolute, because the run works in the scratch directory: every path handed to the
     # application has to mean the same there as it does here.
@@ -203,7 +210,7 @@ def run(binary, out_dir, task, target=None, only=None, verbose=False, chapter=No
     with tempfile.TemporaryDirectory(prefix="qms-shots-") as scratch:
         config = compose_config(scratch, chapter, scenario if config_of is NOT_GIVEN else config_of)
 
-        platform = screen_config(scratch)
+        platform = screen_config(scratch, dpr)
         cmd = [
             str(binary),
             "-platform", platform,
@@ -237,12 +244,13 @@ def run(binary, out_dir, task, target=None, only=None, verbose=False, chapter=No
 
         # In the scratch directory, so the platform argument can name the screen file relatively.
         result = subprocess.run(cmd, env=env, cwd=scratch, capture_output=not verbose, text=True)
-        if result.returncode != 0:
+        if result.returncode != 0 and not allow_failure:
             if not verbose and result.stderr:
                 print(result.stderr, file=sys.stderr)
             sys.exit(f"{task} failed with {result.returncode} failures")
 
-    report = {"list": "list.json", "inspect": "inspect.json", "explore": "explore.json"}.get(task)
+    report = {"list": "list.json", "inspect": "inspect.json", "explore": "explore.json",
+              "probe": "probe.json"}.get(task)
     if report is None:
         return {}
     path = out_dir / report
@@ -335,6 +343,28 @@ def page_references():
         for match in re.finditer(r"images/([\w./-]+)\.png", page.read_text(errors="replace")):
             used.add(match.group(1))
     return used
+
+
+def cmd_probe(args):
+    """Throwaway: can the application be driven by synthesized input alone?
+
+    Runs with every pin a build uses - offscreen at dpr 1, pinned style, font, colour scheme and
+    locale - so a report from a writer's Windows HiDPI machine is comparable with this one.
+    """
+    report = run(find_binary(args.binary), Path(args.out), "probe", verbose=args.verbose,
+                 allow_failure=True, dpr=args.dpr)
+
+    env = report.get("environment", {})
+    print("environment")
+    for key in sorted(env):
+        print(f"  {key:<20} {env[key]}")
+    print("\nsteps")
+    for entry in report.get("steps", []):
+        mark = "ok  " if entry.get("ok") else "FAIL"
+        detail = f"  ({entry['detail']})" if entry.get("detail") else ""
+        print(f"  {mark} {entry['step']}{detail}")
+    print(f"\n{report.get('failures', '?')} failure(s); images in {Path(args.out).resolve()}")
+    return 0 if report.get("ok") else 1
 
 
 def cmd_reap(args):
@@ -453,6 +483,10 @@ def main():
     chapter = sub.add_parser("chapter", help="shoot one chapter file")
     chapter.add_argument("name", nargs="?", default="scratch")
     chapter.set_defaults(func=cmd_chapter)
+
+    probe = sub.add_parser("probe", help="throwaway: is the app drivable by synthesized input?")
+    probe.add_argument("--dpr", type=float, help="pretend the screen has this device pixel ratio")
+    probe.set_defaults(func=cmd_probe)
 
     reap = sub.add_parser("reap", help="images no page references any more")
     reap.add_argument("--delete", action="store_true", help="actually remove them")
