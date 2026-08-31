@@ -317,16 +317,6 @@ set( SRCS
     setup/CCommandProcessor.cpp
     setup/CLogHandler.cpp
     setup/IAppSetup.cpp
-    shoot/CShotChapter.cpp
-    shoot/CShotContext.cpp
-    shoot/CShotDocMode.cpp
-    shoot/CShotDocPanel.cpp
-    shoot/CShotExposures.cpp
-    shoot/CShotFixture.cpp
-    shoot/CShotRecorder.cpp
-    shoot/CShotRegistry.cpp
-    shoot/CShotRunner.cpp
-    shoot/CShotWriter.cpp
     tool/CImportDatabase.cpp
     tool/CMapVrtBuilder.cpp
     tool/CRoutinoDatabaseBuilder.cpp
@@ -1058,10 +1048,23 @@ else(Qt6DBus_FOUND)
     set(DBUS_LIB)
 endif(Qt6DBus_FOUND)
 
-if(QMS_SHOT_PROBE)
-    # Throwaway; see the option in the top level CMakeLists.
-    target_sources(${APPLICATION_NAME} PRIVATE shoot/CShotProbe.cpp shoot/CShotProbe.h)
-    target_compile_definitions(${APPLICATION_NAME} PRIVATE QMS_SHOT_PROBE)
+# Developer only; see the option in the top level CMakeLists. Nothing outside main.cpp references
+# it, and main.cpp compiles the two call sites out with the same define.
+if(QMS_DOC_MODE)
+    target_sources(${APPLICATION_NAME} PRIVATE
+        shoot/CShotChapter.cpp
+        shoot/CShotContext.cpp
+        shoot/CShotDocMode.cpp
+        shoot/CShotDocPanel.cpp
+        shoot/CShotEntry.cpp
+        shoot/CShotExposures.cpp
+        shoot/CShotFixture.cpp
+        shoot/CShotRecorder.cpp
+        shoot/CShotRegistry.cpp
+        shoot/CShotRunner.cpp
+        shoot/CShotWriter.cpp
+    )
+    target_compile_definitions(${APPLICATION_NAME} PRIVATE QMS_DOC_MODE)
     target_link_libraries(${APPLICATION_NAME} PRIVATE Qt6::Test)
 endif()
 

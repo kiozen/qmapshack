@@ -4,7 +4,17 @@ You write a page and say where you want pictures. QMapShack takes them, and can 
 again later — after the program changes, on another machine — without you clicking through
 anything a second time.
 
-You need Python 3 and your own build of this checkout.
+You need Python 3 and your own build of this checkout, configured with the documentation
+subsystem switched on:
+
+```
+cmake -S . -B build -DQMS_DOC_MODE=ON
+cmake --build build --target qmapshack
+```
+
+It is off by default and never in a released binary: it drives the program through synthesized
+input and links Qt's test library. A build without it starts normally and ignores every command
+below.
 
 `shots.py` looks for the program in `build/bin/`. If your build puts it somewhere else — the
 usual case on Windows — name it:
