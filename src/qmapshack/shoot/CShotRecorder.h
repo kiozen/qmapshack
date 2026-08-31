@@ -30,6 +30,7 @@
 #include <QSet>
 #include <QString>
 #include <QVariant>
+#include <functional>
 
 class CCanvas;
 class CShotContext;
@@ -87,9 +88,13 @@ class CShotRecorder : public QObject {
      or a map the canvas cannot show is a failure with the action printed, never a silently wrong
      picture.
 
+     @param whenReady  run after the last step and before the queue lets go. A modal dialog a step
+                       opened is still on screen there and nowhere else: it runs its own event
+                       loop, so anything after `replay()` returns happens with the dialog closed.
+
      @return The number of failures
    */
-  static int replay(const QJsonArray& actions, CShotContext& ctx);
+  static int replay(const QJsonArray& actions, CShotContext& ctx, const std::function<void()>& whenReady = {});
 
   /**
      @brief Take back what a replay left on screen.
