@@ -161,8 +161,21 @@ class CShotRecorder : public QObject {
   /// @brief Drop the click that opened this item's options, because a later one closed them again
   void forgetClickOn(const QString& item);
 
+  /// @brief Drop the step that opened this item's details, because the writer closed them again
+  void forgetDetailsOn(const QString& item);
+
   /// @brief The workspace items expanded right now, by name path
   QSet<QString> expandedNow() const;
+
+  /**
+     @brief The workspace items whose details are a page of the window right now, by name path.
+
+     A track's and a project's details are not dialogs, they are pages the main window keeps until
+     they are closed - so they are state, and a picture of one has to be able to say it wants them.
+     What opens them is a press, which is exactly what this recorder does not watch, so the page
+     they add is found here instead.
+   */
+  QSet<QString> detailsNow() const;
 
   /// @return The workspace item's name path, empty when nothing is selected
   QString selectionNow() const;
@@ -176,6 +189,7 @@ class CShotRecorder : public QObject {
 
   QString lastSelection;
   QSet<QString> lastExpanded;
+  QSet<QString> lastDetails;
   QHash<QString, QVariant> lastInputs;
 
   /// What the writer pressed on. An input that changed without being pressed was changed by the

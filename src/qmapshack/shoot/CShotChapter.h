@@ -23,10 +23,12 @@
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
+#include <QVariant>
 
 class CShotContext;
 class CGisListWks;
 class CMainWindow;
+class QObject;
 class QTreeWidgetItem;
 class QWidget;
 
@@ -55,6 +57,15 @@ QString addressOf(const QWidget* main, const QWidget* widget);
 
 /// @return The widget the address names, or nullptr
 QWidget* resolve(QWidget* main, const QString& address);
+
+/**
+   @brief Put a value into a widget's property, and answer whether it arrived.
+
+   `setProperty()` says whether the property exists, never whether the value took: a QTabWidget
+   drops a `currentIndex` past its last page and reports success either way, which comes out as a
+   picture of the wrong page and no warning at all.
+ */
+bool driveProperty(QObject* target, const QString& property, const QVariant& value);
 
 // --- addressing an item of the workspace ------------------------------------------------------
 
