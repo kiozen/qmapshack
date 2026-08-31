@@ -980,6 +980,15 @@ file.
 - `waypoint-icon-resolution-plan.md` — 32 → 96 px waypoint icons, gated on storing `icon_t::focus`
   relative.
 
+**The documentation subsystem is developer-only.** `shoot/` is compiled and `Qt6::Test` linked only
+under `-DQMS_DOC_MODE=ON`; `main.cpp` compiles its two call sites out with the same define, so
+`--shoot` and `--doc` are inert in a user's binary. A doc run needs the source tree and a build
+tree configured with it.
+
+`shot-input-replay-plan.md` replaces the scenario recorder's state differ with recorded input. Its
+*Measured* section is the evidence, taken on Linux and Windows with a throwaway probe that has
+since been deleted; do not re-derive those facts, and do not doubt them without a new measurement.
+
 `QMS-1217-screenshot-framework-plan.md` (documentation images) is implemented on branch
 `QMS-1217_demo` as a **throwaway demo** and describes what is built. §7 is the design, §8 what is
 missing. `shots.py doc <chapter>` is the writer's session, `shots.py chapter|build` the headless
