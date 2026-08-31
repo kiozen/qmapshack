@@ -122,6 +122,51 @@ class CWksItemDelegate : public QStyledItemDelegate {
     qint32 statusSizeItem; /**< Point-size reduction for the item status font; -1 hides the line. */
   };
 
+  /**
+     @brief One of the tool buttons a row carries.
+
+     A row's buttons have no widgets and therefore no addresses; this enum is their vocabulary.
+     buttonName() is what a recorded scenario stores, because the enum's numbers are not a contract.
+   */
+  enum class button_e {
+    eNone,
+    eVisible,
+    eSave,
+    eAutoSyncDev,
+    eActiveProject,
+    eSetup,
+    eWptIcon,
+    eLineEdit,
+  };
+  Q_ENUM(button_e)
+
+  /// @return The stable, untranslated name of a button; empty for eNone
+  static QString buttonName(button_e button);
+
+  /// @return The button of that name, eNone when there is none
+  static button_e buttonByName(const QString& name);
+
+  /// @brief A button of a row and where it sits, in the coordinates the layout was built in
+  struct button_t {
+    button_e button = button_e::eNone;
+    QRect rect;
+  };
+
+  /**
+     @brief Act on a row's button.
+
+     The one place a button's effect lives, so a replayed scenario reaches exactly what a click
+     reaches. The caller has already decided which button this is; nothing here hit-tests.
+
+     @param hasFocus    whether the row holds the UI focus; only eActiveProject asks
+     @param rectButton  only to place the popup eSetup opens. A replayed scenario has no layout of
+                        its own and passes the row's rect; the picture is of the menu, not of where
+                        on the screen it sits.
+     @return true when the button acted. False is not an error: eActiveProject on a row that does
+             not hold the focus changes nothing, and that is what keeps it out of a recording.
+   */
+  bool pressButton(button_e button, IWksItem& item, bool hasFocus, const QRect& rectButton);
+
   /// Current state of the status line control flags
   const item_status_ctrl_t& getStatusItemsControl() const { return itemStatusControl; }
   /// Update status line control flags and persist them to QSettings. Triggers a layout change.
@@ -184,6 +229,9 @@ class CWksItemDelegate : public QStyledItemDelegate {
 
  signals:
   void sigUpdateCanvas();
+
+  /// @brief A row's tool button was pressed. The scenario recorder listens; nothing else has to.
+  void sigButtonPressed(const QModelIndex& index, CWksItemDelegate::button_e button);
 
  private:
   /** @brief Cast the model index to an IWksItem; returns nullptr if the index is not an IWksItem. */
@@ -286,6 +334,9 @@ class CWksItemDelegate : public QStyledItemDelegate {
   /** @brief Paint a geo-search error row (error icon + message text). */
   void paintGeoSearchError(QPainter* p, const QStyleOptionViewItem& opt, const QModelIndex& index,
                            const IWksItem& item) const;
+
+  /** @brief Which button of a row sits under a point; eNone when none does. */
+  button_t buttonAt(const QStyleOptionViewItem& opt, IWksItem& item, const QPoint& pos) const;
 
   /** @brief Handle button clicks in a project row; returns true when a button was hit. */
   bool mousePressProject(QMouseEvent* me, const QStyleOptionViewItem& opt, const QModelIndex& index, IWksItem& item);

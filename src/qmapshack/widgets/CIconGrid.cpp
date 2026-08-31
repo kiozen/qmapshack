@@ -34,11 +34,33 @@ void CIconGrid::updateIconList(const QList<CWptIconManager::icon_t> &visibleIcon
   QCoreApplication::postEvent(this, new QResizeEvent(size(), QSize()));
 }
 
+int CIconGrid::indexAt(const QPoint &pos) const {
+  if (cols < 1 || pos.x() < 0 || pos.y() < 0 || pos.x() >= cols * kTileSize) {
+    return -1;
+  }
+  const int index = (pos.y() / kTileSize) * cols + (pos.x() / kTileSize);
+  return (index < icons.size()) ? index : -1;
+}
+
+QString CIconGrid::iconAt(const QPoint &pos) const {
+  const int index = indexAt(pos);
+  return (index == -1) ? QString() : icons[index].name;
+}
+
+QRect CIconGrid::rectOfIcon(const QString &name) const {
+  if (cols < 1) {
+    return {};
+  }
+  for (int i = 0; i < icons.size(); i++) {
+    if (icons[i].name == name) {
+      return QRect((i % cols) * kTileSize, (i / cols) * kTileSize, kTileSize, kTileSize);
+    }
+  }
+  return {};
+}
+
 void CIconGrid::mouseMoveEvent(QMouseEvent *e) {
-  const QPoint &pos = e->pos();
-  const int n = pos.x() / kTileSize;
-  const int m = pos.y() / kTileSize;
-  const int newIndex = (pos.x() < cols * kTileSize) ? m * cols + n : -1;
+  const int newIndex = indexAt(e->pos());
 
   if (newIndex != indexFocus) {
     setIndexFocus(newIndex);
@@ -46,8 +68,12 @@ void CIconGrid::mouseMoveEvent(QMouseEvent *e) {
 }
 
 void CIconGrid::mousePressEvent(QMouseEvent *e) {
-  if (indexFocus != -1 && indexFocus < icons.size()) {
-    emit sigSelectedIcon(icons[indexFocus].name);
+  // The point, never indexFocus: a synthesized click brings no hover with it, and without a move
+  // before it the focus is still -1 and the press picks nothing.
+  const int index = indexAt(e->pos());
+  if (index != -1) {
+    setIndexFocus(index);
+    emit sigSelectedIcon(icons[index].name);
   }
 }
 
@@ -82,8 +108,8 @@ void CIconGrid::paintEvent(QPaintEvent *e) {
           p.setBrush(Qt::lightGray);
         }
         p.drawRect(rectTile);
-        const QPixmap& icon = QPixmap(icons[index].path)
-                       .scaled(kTileSize / 2, kTileSize / 2, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        const QPixmap &icon = QPixmap(icons[index].path)
+                                  .scaled(kTileSize / 2, kTileSize / 2, Qt::KeepAspectRatio, Qt::SmoothTransformation);
         QRect rectIcon = icon.rect();
         rectIcon.moveCenter(rectTile.center());
         p.drawPixmap(rectIcon, icon);

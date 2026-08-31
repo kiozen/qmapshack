@@ -563,8 +563,12 @@ void CShotDocMode::tag() {
   // window too and is exempt: it is a member of what owns it and is found again.
   const bool ownWindow = target->isWindow() && target != main && nullptr == qobject_cast<QMenu*>(target);
 
+  // A window a scenario put here is photographed where it stands: the scenario opens it again, and
+  // the shot records which window it expects so a scenario that stops opening it fails loudly.
+  const bool fromScenario = ownWindow && !selectedScenario.isEmpty();
+
   QString exposure;
-  if (ownWindow) {
+  if (ownWindow && !fromScenario) {
     exposure = CShotRegistry::self().exposureForWidget(target);
     if (exposure.isEmpty()) {
       reportUnexposed(target);
@@ -572,15 +576,14 @@ void CShotDocMode::tag() {
     }
   }
 
-  const bool live = exposure.isEmpty() && (nullptr != main) && isPartOf(main, target);
-  if (!live && exposure.isEmpty()) {
+  const bool live = !fromScenario && exposure.isEmpty() && (nullptr != main) && isPartOf(main, target);
+  if (!live && !fromScenario && exposure.isEmpty()) {
     reportUnexposed(target);
     return;
   }
 
-  QSize liveSize;
   if (live) {
-    target = chooseLivePart(main, liveSize);
+    target = chooseLivePart(main);
     if (nullptr == target) {
       return;
     }
@@ -618,14 +621,19 @@ void CShotDocMode::tag() {
     shot["set"] = set;
   }
 
-  if (live) {
-    shot["widget"] = CShotChapter::addressOf(main, target);
-    // The main window can be resized; a docker or a tab inside it cannot, because the layout
-    // decides. Recording a size there would promise the replay something it cannot keep - the
-    // chapter's stored arrangement is what makes those pictures reproducible.
-    if (target == main) {
-      shot["size"] = QJsonArray({liveSize.width(), liveSize.height()});
+  if (fromScenario) {
+    shot["widget"] = QString();
+    shot["window"] = QString::fromLatin1(target->metaObject()->className());
+    if (!target->windowTitle().isEmpty()) {
+      shot["note"] = target->windowTitle();
     }
+  } else if (live) {
+    shot["widget"] = CShotChapter::addressOf(main, target);
+    // The window's size, whatever part of it is photographed. A docker or a tab cannot be resized
+    // on its own - the layout decides - but the layout is decided by the window, so the picture
+    // depends on this number even when it is not the picture's own size. It is what the replay puts
+    // the window at before the scenario runs; render() never applies it to anything but a window.
+    shot["size"] = QJsonArray({main->width(), main->height()});
     if (!target->windowTitle().isEmpty()) {
       shot["note"] = target->windowTitle();
     }
@@ -660,7 +668,7 @@ void CShotDocMode::tag() {
   qInfo().noquote() << QString::fromUtf8(QJsonDocument(shot).toJson(QJsonDocument::Compact));
 }
 
-QWidget* CShotDocMode::chooseLivePart(CMainWindow* main, QSize& size) const {
+QWidget* CShotDocMode::chooseLivePart(CMainWindow* main) const {
   // Where the writer is pointing, not where the keyboard focus happens to be: a docker is chosen by
   // looking at it, and clicking a label to focus it first is not something a writer should have to
   // know.
@@ -670,7 +678,6 @@ QWidget* CShotDocMode::chooseLivePart(CMainWindow* main, QSize& size) const {
   }
 
   QList<QWidget*> parts;
-  QList<QSize> sizes;
   QStringList labels;
   for (QWidget* w = start; nullptr != w && w != main; w = w->parentWidget()) {
     // Only what a recipe can find again.
@@ -681,16 +688,12 @@ QWidget* CShotDocMode::chooseLivePart(CMainWindow* main, QSize& size) const {
     const QString& title =
         w->windowTitle().isEmpty() ? QString::fromLatin1(w->metaObject()->className()) : w->windowTitle();
     parts << w;
-    // Captured now: the dialog below closes an open menu, and a closed menu reports a stale size.
-    sizes << w->size();
     labels << QString("%1 (%2)").arg(title, address);
   }
   parts << main;
-  sizes << main->size();
   labels << tr("The whole application");
 
   if (parts.size() == 1) {
-    size = main->size();
     return main;
   }
 
@@ -701,7 +704,6 @@ QWidget* CShotDocMode::chooseLivePart(CMainWindow* main, QSize& size) const {
   }
 
   const qsizetype index = labels.indexOf(chosen);
-  size = sizes.value(index, main->size());
   return parts.value(index, main);
 }
 

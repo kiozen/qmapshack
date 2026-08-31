@@ -169,6 +169,8 @@ QMenu* IGisItem::getColorMenu(const QString& title, QObject* obj, const char* sl
     QPixmap pixmap(16, 16);
     pixmap.fill(IGisItem::colorMap[i].color);
     action = menu->addAction(QIcon(pixmap), IGisItem::colorMap[i].label);
+    // The untranslated GPX colour name, never the label.
+    action->setObjectName("actionColor_" + IGisItem::colorMap[i].name);
     action->setProperty("colorIdx", i);
 
     if (obj != nullptr) {

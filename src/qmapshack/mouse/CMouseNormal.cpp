@@ -381,28 +381,38 @@ void CMouseNormal::showContextMenu(const QPoint& point) {
   QMenu menu(canvas);
   if (curPois.count() > 0 && curPois.count() <= 5) {
     for (IPoiItem poi : curPois) {
+      // The POI's own name, not the index: which POI was picked is what a recording is about.
       menu.addAction(QIcon("://icons/AddWpt.svgt"), tr("Add POI %1 as Waypoint").arg(poi.name), this,
-                     [this, poi] { slotAddPoi(poi); });
+                     [this, poi] { slotAddPoi(poi); })
+          ->setObjectName("actionAddPoi_" + poi.name);
     }
   } else if (curPois.count() > 5) {
-    menu.addAction(QIcon("://icons/AddWpt.svgt"), tr("Zoom in to add POIs as Waypoints"));
+    menu.addAction(QIcon("://icons/AddWpt.svgt"), tr("Zoom in to add POIs as Waypoints"))
+        ->setObjectName("actionZoomInForPois");
   }
   QPointF pt = mouse->getPoint();
   gis->convertPx2Rad(pt);
 
-  menu.addAction(QIcon("://icons/AddWpt.svgt"), tr("Add Waypoint"), this, &CMouseNormal::slotAddWpt);
-  menu.addAction(QIcon("://icons/AddTrk.svgt"), tr("Add Track"), this, &CMouseNormal::slotAddTrk);
-  menu.addAction(QIcon("://icons/AddRte.svgt"), tr("Add Route"), this, &CMouseNormal::slotAddRte);
-  menu.addAction(QIcon("://icons/AddArea.svgt"), tr("Add Area"), this, &CMouseNormal::slotAddArea);
+  menu.addAction(QIcon("://icons/AddWpt.svgt"), tr("Add Waypoint"), this, &CMouseNormal::slotAddWpt)
+      ->setObjectName("actionAddWpt");
+  menu.addAction(QIcon("://icons/AddTrk.svgt"), tr("Add Track"), this, &CMouseNormal::slotAddTrk)
+      ->setObjectName("actionAddTrk");
+  menu.addAction(QIcon("://icons/AddRte.svgt"), tr("Add Route"), this, &CMouseNormal::slotAddRte)
+      ->setObjectName("actionAddRte");
+  menu.addAction(QIcon("://icons/AddArea.svgt"), tr("Add Area"), this, &CMouseNormal::slotAddArea)
+      ->setObjectName("actionAddArea");
   menu.addSeparator();
-  menu.addAction(QIcon("://icons/CSrcDistance.svgt"), tr("Ruler"), this, &CMouseNormal::slotRuler);
+  menu.addAction(QIcon("://icons/CSrcDistance.svgt"), tr("Ruler"), this, &CMouseNormal::slotRuler)
+      ->setObjectName("actionRuler");
   menu.addSeparator();
-  menu.addAction(QIcon("://icons/SelectArea.svgt"), tr("Select Items On Map"), this, &CMouseNormal::slotSelectArea);
+  menu.addAction(QIcon("://icons/SelectArea.svgt"), tr("Select Items On Map"), this, &CMouseNormal::slotSelectArea)
+      ->setObjectName("actionSelectArea");
   menu.addSeparator();
   menu.addMenu(CGeoSearchWeb::self().getMenu(pt * RAD_TO_DEG, &menu));
-  menu.addAction(QIcon("://icons/CopyPosition.svgt"), tr("Copy position"), this, &CMouseNormal::slotCopyPosition);
-  menu.addAction(QIcon("://icons/CopyGrid.svgt"), tr("Copy position (Grid)"), this,
-                 &CMouseNormal::slotCopyPositionGrid);
+  menu.addAction(QIcon("://icons/CopyPosition.svgt"), tr("Copy position"), this, &CMouseNormal::slotCopyPosition)
+      ->setObjectName("actionCopyPosition");
+  menu.addAction(QIcon("://icons/CopyGrid.svgt"), tr("Copy position (Grid)"), this, &CMouseNormal::slotCopyPositionGrid)
+      ->setObjectName("actionCopyPositionGrid");
 
   QPoint p = canvas->mapToGlobal(point);
   menu.exec(p);

@@ -312,9 +312,6 @@ class CGisItemTrk : public IGisItem, public IGisLine {
   // Usually the QPointer to "dlgDetails" should be cleared if the object is destroyed.
   void clearDlgDetails() { dlgDetails.clear(); }
 
-  /// @brief Are the track's details a page of the main window's tab widget?
-  bool hasDlgDetails() const { return !dlgDetails.isNull(); }
-
   void setComment(const QString& str) override;
   void setDescription(const QString& str) override;
   void setLinks(const QList<link_t>& links) override;

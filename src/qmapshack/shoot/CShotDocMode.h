@@ -85,12 +85,9 @@ class CShotDocMode : public QObject {
      Starts at the widget under the mouse and walks up to the whole window, offering every step
      that a recipe can find again by objectName.
 
-     @param size  out: the widget's size at the moment F9 was pressed, before any dialog of ours
-                  closed an open menu
-
      @return The chosen widget, or nullptr if the writer cancelled
    */
-  QWidget* chooseLivePart(CMainWindow* main, QSize& size) const;
+  QWidget* chooseLivePart(CMainWindow* main) const;
 
   /**
      @brief Show the writer the picture and let them throw it away again.

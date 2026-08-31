@@ -51,7 +51,9 @@ int IPlot::cnt = 0;
 IPlot::IPlot(CGisItemTrk* trk, CPlotData::axistype_e type, mode_e mode, QWidget* parent)
     : QWidget(parent), INotifyTrk(CGisItemTrk::eVisualPlot), mode(mode), trk(trk), fm(font()) {
   cnt++;
-  setObjectName(QString("IPlot%1").arg(cnt));
+  // Not the objectName: that is the widget's address, and a running counter makes it depend on how
+  // many plots were built before this one. The tag only has to be unique per instance.
+  ownerTag = QString("IPlot%1").arg(cnt);
 
   setContextMenuPolicy(Qt::CustomContextMenu);
   setMouseTracking(true);
@@ -77,13 +79,19 @@ IPlot::IPlot(CGisItemTrk* trk, CPlotData::axistype_e type, mode_e mode, QWidget*
 
   menu = new QMenu(this);
   actionResetZoom = menu->addAction(QIcon("://icons/Zoom.svgt"), tr("Reset Zoom"), this, &IPlot::slotResetZoom);
+  actionResetZoom->setObjectName("actionResetZoom");
   actionStopRange = menu->addAction(QIcon("://icons/SelectReset.svgt"), tr("Reset Range"), this, &IPlot::slotStopRange);
+  actionStopRange->setObjectName("actionStopRange");
   actionPrint = menu->addAction(QIcon("://icons/Save.svgt"), tr("Save..."), this, &IPlot::slotSave);
+  actionPrint->setObjectName("actionPrint");
   menu->addSeparator();
   actionAddWpt = menu->addAction(QIcon("://icons/AddWpt.svgt"), tr("Add Waypoint"), this, &IPlot::slotAddWpt);
+  actionAddWpt->setObjectName("actionAddWpt");
   actionAddTrkPtInfo =
       menu->addAction(QIcon("://icons/AddPointInfo.svgt"), tr("Add Trackpoint Info"), this, &IPlot::slotAddTrkPtInfo);
+  actionAddTrkPtInfo->setObjectName("actionAddTrkPtInfo");
   actionCutTrk = menu->addAction(QIcon("://icons/TrkCut.svgt"), tr("Cut Track..."), this, &IPlot::slotCutTrk);
+  actionCutTrk->setObjectName("actionCutTrk");
 
   connect(this, &IPlot::customContextMenuRequested, this, &IPlot::slotContextMenu);
 }
@@ -97,7 +105,7 @@ IPlot::~IPlot() {
         Always set the mode to normal. If the object is not owner
         of the current mode, the request will be ignored.
      */
-    trk->setMode(CGisItemTrk::eModeNormal, objectName());
+    trk->setMode(CGisItemTrk::eModeNormal, ownerTag);
 
     /*
         As having the user focus will always display an on screen plot, closing
@@ -326,12 +334,27 @@ bool IPlot::setMouseFocus(qreal pos, enum CGisItemTrk::focusmode_e fm) {
   }
 
   if (data->axisType == CPlotData::eAxisLinear) {
-    return trk->setMouseFocusByDistance(pos, fm, objectName());
+    return trk->setMouseFocusByDistance(pos, fm, ownerTag);
   } else if (data->axisType == CPlotData::eAxisTime) {
-    return trk->setMouseFocusByTime(pos, fm, objectName());
+    return trk->setMouseFocusByTime(pos, fm, ownerTag);
   }
 
   return false;
+}
+
+qreal IPlot::xValueAt(const QPoint& pos) const {
+  if (nullptr == data || !rectGraphArea.contains(pos)) {
+    return NOFLOAT;
+  }
+  return data->x().pt2val(pos.x() - left);
+}
+
+QPoint IPlot::pointOfXValue(qreal value) const {
+  if (nullptr == data || NOFLOAT == value) {
+    return NOPOINT;
+  }
+  const QPoint pos(left + data->x().val2pt(value), rectGraphArea.center().y());
+  return rectGraphArea.contains(pos) ? pos : NOPOINT;
 }
 
 void IPlot::mousePressEvent(QMouseEvent* e) {
@@ -414,7 +437,7 @@ bool IPlot::mouseReleaseEventNormal(QMouseEvent* e) {
   switch (mouseClickState) {
     case eMouseClickIdle: {
       // In idle state a mouse click will select the first point of a range
-      if (trk->setMode(CGisItemTrk::eModeRange, objectName())) {
+      if (trk->setMode(CGisItemTrk::eModeRange, ownerTag)) {
         setMouseFocus(x, CGisItemTrk::eFocusMouseClick);
         mouseClickState = eMouseClick1st;
       } else {
@@ -472,7 +495,7 @@ bool IPlot::mouseReleaseEventNormal(QMouseEvent* e) {
       if (!scrOptRange.isNull()) {
         scrOptRange->deleteLater();
       }
-      trk->setMode(CGisItemTrk::eModeNormal, objectName());
+      trk->setMode(CGisItemTrk::eModeNormal, ownerTag);
       idxSel1 = idxSel2 = NOIDX;
       mouseClickState = eMouseClickIdle;
       break;
@@ -1331,7 +1354,7 @@ void IPlot::slotStopRange() {
   if (!scrOptRange.isNull()) {
     scrOptRange->deleteLater();
   }
-  trk->setMode(CGisItemTrk::eModeNormal, objectName());
+  trk->setMode(CGisItemTrk::eModeNormal, ownerTag);
   idxSel1 = idxSel2 = NOIDX;
   mouseClickState = eMouseClickIdle;
 

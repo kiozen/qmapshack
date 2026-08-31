@@ -113,36 +113,48 @@ CGisListDB::CGisListDB(QWidget* parent) : QTreeWidget(parent), socket(nullptr) {
   menuNone = new QMenu(this);
   actionAddDatabase =
       menuNone->addAction(QIcon("://icons/Add.svgt"), tr("Add Database"), this, &CGisListDB::slotAddDatabase);
+  actionAddDatabase->setObjectName("actionAddDatabase");
 
   menuFolder = new QMenu(this);
   actionAddFolder =
       menuFolder->addAction(QIcon("://icons/Add.svgt"), tr("Add Folder"), this, &CGisListDB::slotAddFolder);
+  actionAddFolder->setObjectName("actionAddFolder");
   actionRenameFolder =
       menuFolder->addAction(QIcon("://icons/A.svgt"), tr("Rename Folder"), this, &CGisListDB::slotRenameFolder);
+  actionRenameFolder->setObjectName("actionRenameFolder");
   actionCopyFolder =
       menuFolder->addAction(QIcon("://icons/Copy.svgt"), tr("Copy Folder"), this, &CGisListDB::slotCopyFolder);
+  actionCopyFolder->setObjectName("actionCopyFolder");
   actionMoveFolder =
       menuFolder->addAction(QIcon("://icons/Move.svgt"), tr("Move Folder"), this, &CGisListDB::slotMoveFolder);
+  actionMoveFolder->setObjectName("actionMoveFolder");
   actionDelFolder =
       menuFolder->addAction(QIcon("://icons/DeleteOne.svgt"), tr("Delete Folder"), this, &CGisListDB::slotDelFolder);
+  actionDelFolder->setObjectName("actionDelFolder");
   menuFolder->addSeparator();
   actionImport =
       menuFolder->addAction(QIcon("://icons/LoadGIS.svgt"), tr("Import from Files..."), this, &CGisListDB::slotImport);
+  actionImport->setObjectName("actionImport");
   actionExportToGpx =
       menuFolder->addAction(QIcon("://icons/SaveGIS.svgt"), tr("Export to GPX..."), this, &CGisListDB::slotExportToGpx);
+  actionExportToGpx->setObjectName("actionExportToGpx");
 
   menuItem = new QMenu(this);
   actionDelItem =
       menuItem->addAction(QIcon("://icons/DeleteOne.svgt"), tr("Delete Item"), this, &CGisListDB::slotDelItem);
+  actionDelItem->setObjectName("actionDelItem");
 
   menuDatabase = new QMenu(this);
   menuDatabase->addAction(actionAddFolder);
-  actionSearch =
-      menuDatabase->addAction(QIcon("://icons/Zoom.svgt"), tr("Search Database"), this, &CGisListDB::slotSearchDatabase);
+  actionSearch = menuDatabase->addAction(QIcon("://icons/Zoom.svgt"), tr("Search Database"), this,
+                                         &CGisListDB::slotSearchDatabase);
+  actionSearch->setObjectName("actionSearch");
   actionUpdate = menuDatabase->addAction(QIcon("://icons/DatabaseSync.svgt"), tr("Sync. with Database"), this,
                                          &CGisListDB::slotUpdateDatabase);
+  actionUpdate->setObjectName("actionUpdate");
   actionDelDatabase = menuDatabase->addAction(QIcon("://icons/DeleteOne.svgt"), tr("Remove Database"), this,
                                               &CGisListDB::slotDelDatabase);
+  actionDelDatabase->setObjectName("actionDelDatabase");
   menuDatabase->addSeparator();
   menuDatabase->addAction(actionImport);
   menuDatabase->addAction(actionExportToGpx);
@@ -150,10 +162,12 @@ CGisListDB::CGisListDB(QWidget* parent) : QTreeWidget(parent), socket(nullptr) {
   menuLostFound = new QMenu(this);
   actionDelLostFound =
       menuLostFound->addAction(QIcon("://icons/Empty.svgt"), tr("Empty"), this, &CGisListDB::slotDelLostFound);
+  actionDelLostFound->setObjectName("actionDelLostFound");
 
   menuLostFoundItem = new QMenu(this);
   actionDelLostFoundItem = menuLostFoundItem->addAction(QIcon("://icons/DeleteOne.svgt"), tr("Delete Item"), this,
                                                         &CGisListDB::slotDelLostFoundItem);
+  actionDelLostFoundItem->setObjectName("actionDelLostFoundItem");
 
   connect(this, &CGisListDB::customContextMenuRequested, this, &CGisListDB::slotContextMenu);
   connect(this, &CGisListDB::itemExpanded, this, &CGisListDB::slotItemExpanded);
@@ -915,8 +929,7 @@ void CGisListDB::slotReadyRead() {
     }
 
     qDebug() << "Receive database update from:" << sender << senderPort;
-    qDebug() << "with"
-             << "tan:" << lastTan << "app ID:" << id << "driver:" << driver << "DB name:" << dbName
+    qDebug() << "with" << "tan:" << lastTan << "app ID:" << id << "driver:" << driver << "DB name:" << dbName
              << "DB host:" << dbHost;
 
     IDBFolderSql* folder = getDataBase(dbName, dbHost);

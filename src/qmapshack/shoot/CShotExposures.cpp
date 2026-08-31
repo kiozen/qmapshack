@@ -237,18 +237,10 @@ SHOT_EXPOSE("TextEditWidget", "Rich text editor for descriptions and comments", 
 
 // --- takes a fixture item -------------------------------------------------------------------
 
-SHOT_EXPOSE("DetailsWpt", "Waypoint detail panel", CDetailsWpt,
-            [](CShotContext& c, QWidget* p) -> QWidget* { return new CDetailsWpt(*c.wpt(), p); });
-SHOT_EXPOSE("DetailsTrk", "Track detail panel", CDetailsTrk,
-            [](CShotContext& c, QWidget*) -> QWidget* { return new CDetailsTrk(*c.trk()); });
-SHOT_EXPOSE("DetailsRte", "Route detail panel", CDetailsRte,
-            [](CShotContext& c, QWidget* p) -> QWidget* { return new CDetailsRte(*c.rte(), p); });
-SHOT_EXPOSE("DetailsArea", "Area detail panel", CDetailsOvlArea,
-            [](CShotContext& c, QWidget* p) -> QWidget* { return new CDetailsOvlArea(*c.area(), p); });
-SHOT_EXPOSE("DetailsPrj", "Project detail panel", CDetailsPrj,
-            [](CShotContext& c, QWidget* p) -> QWidget* { return new CDetailsPrj(*c.project(), p); });
-SHOT_EXPOSE("DetailsGeoCache", "Geocache detail panel", CDetailsGeoCache,
-            [](CShotContext& c, QWidget* p) -> QWidget* { return new CDetailsGeoCache(*c.wpt(), p); });
+// No Details* here any more: a scenario opens each of them through the context menu entry that
+// opens it for a user, and photographs it where it stands. An exposure is for a widget no
+// sequence of clicks reaches - a dialog caught mid-operation, a report of a failure.
+
 SHOT_EXPOSE("ProjWpt", "Project a waypoint by bearing and distance", CProjWpt,
             [](CShotContext& c, QWidget* p) -> QWidget* { return new CProjWpt(*c.wpt(), p); });
 SHOT_EXPOSE("InvalidTrk", "Invalid track point report", CInvalidTrk,

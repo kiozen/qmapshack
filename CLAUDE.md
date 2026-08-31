@@ -1005,6 +1005,14 @@ doc/shots/fixture/shots.ini       the base a chapter opens on
   release and stores meaning - a name path, a geographic point, a driven value - plus `layout` and
   `view` (the centre and the zoom level, never a rectangle: `zoomTo()` snaps and everything on the
   map moves) taken whole at Stop. `IShotRecipe` and `RecipesChapter.cpp` are gone; `SHOT_EXPOSE` stays.
+- **The window's size has exactly one record: the shot's `size`.** `layout` carries `saveState()`
+  and the tab, never `saveGeometry()`. `shootOne()` resizes the window before the scenario runs and
+  `restoreState()` distributes the dock extents into it - that order is required, because those
+  extents are pixels. Everything the scenario produces is measured against that size: where the map
+  is centred, where an item's options are anchored, and what a stored rectangle frames. A shot the
+  main window sizes - the window itself or anything inside it - must say how big it was, or it is a
+  counted failure; an exposure is exempt. A `layout` that still carries a `geometry` warns and is
+  ignored.
 - **`(base)` is a row, not a scenario.** A shot taken in it has no `scenario` key, and
   `--shoot-scenario -` is how a build asks for that group. Nothing stores it, so it cannot go stale.
 - **A scenario's `.ini` is a whole configuration, never a patch**, and the base is a starting point,
@@ -1026,6 +1034,29 @@ doc/shots/fixture/shots.ini       the base a chapter opens on
   last page without a word.
 - **`CShotChapter::driveProperty()` is how a `set` reaches a widget.** `setProperty()` answers
   whether the property exists, never whether the value took, so the value is read back.
+- **A menu entry is addressed by its action's `objectName`, never its text**, which is translated.
+  Every menu owner names its actions after the member they are assigned to; a menu built from data
+  takes a stable prefix plus an untranslated key (`actionActivity_<act20_e>`,
+  `actionColor_<GPX colour name>`, `actionWptIcon_<sym>`). A new `addAction` needs the same.
+- **A press is a step only when what it landed on acts on a click** (`pressIsStep()`): a button, a
+  tab bar, a combo box, a header, or an item view row that exists. A splitter handle, a dock title,
+  a scroll bar, a menu bar and the empty space under the last row are not. It is a whitelist, so a
+  widget nobody has taught the recorder about records nothing - recoverable, where a wrong click is
+  a picture of the wrong state.
+- **A surface with a vocabulary of its own is never recorded as a position**: the canvas has a
+  geographic point, `IPlot` the x axis' own value (`xValueAt()`/`pointOfXValue()` - metres on a
+  linear axis, seconds on a time one), `CIconGrid` the `<sym>` name
+  (`iconAt()`/`rectOfIcon()`), and a workspace row's tool buttons the delegate's own names
+  (`CWksItemDelegate::button_e`, `buttonAt()`, `pressButton()`). The row buttons are painted, not
+  widgets, so the delegate's `sigButtonPressed` is the only thing that can report one; a replay
+  reaches `pressButton()` directly rather than a point.
+- **`IPlot` sets no `objectName`.** The per-instance tag the track compares its mouse-focus owner
+  against is `IPlot::ownerTag`; making it the objectName too made a plot's address depend on how
+  many plots were built before it. A plot placed by a `.ui` keeps its uic name; one built in code is
+  addressed positionally (`framePlot/CPlotProfile#0`).
+- **`--shoot`, `--doc` and their five companions are parsed under `QMS_DOC_MODE` only**, so a user's
+  binary rejects them instead of accepting a switch that does nothing. The values stay on `CAppOpts`,
+  empty, so no reader needs a branch. `src/qmaptool/setup/` is a separate copy and never had them.
 
 A `--shoot` or `--doc` run must set `CMapDraw::setCacheRoot()` and `CGisListWks::setDatabasePath()`
 before `CMainWindow` is constructed, or it prunes the user's tile cache and empties their

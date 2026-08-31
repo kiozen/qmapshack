@@ -96,40 +96,83 @@ turning it into an item path, an action name or a tab name where one exists.
 - `CGisItemTrk::hasDlgDetails()` / `IGisProject::hasDlgDetails()` and
   `CMainWindow::closeWidgetTab()` are only needed while the `details` action exists.
 
-## Menu owners whose actions are still unnamed
+## Menu owners
 
-Actions declared in a `.ui` file are named by uic. Actions built in code are not, and
-`QMenu::addAction(tr(...))` returns one that never can be. Counted over `src/qmapshack`:
+Actions declared in a `.ui` file are named by uic. Actions built in code are named where they are
+built, after the member they are assigned to; a menu built from data takes a stable prefix plus an
+untranslated key - `actionActivity_<act20_e>`, `actionColor_<GPX colour name>`,
+`actionWptIcon_<sym>`, `actionSearchWeb_<index>`, `actionAddPoi_<POI name>`. Never the text: it is
+translated and is therefore no address.
 
-| owner | unnamed | what it is |
-|---|---|---|
-| `CGisListDB` | 14 | database tree context menu |
-| `CMouseNormal` | 10 | map context menu and screen options |
-| `CSearchLineEdit` | 8 | search field menu |
-| `IPlot` | 6 | profile and graph context menu |
-| `CGeoSearch` | 3 | geo search results |
-| `CTableTrkInfo`, `CHistoryListWidget`, `CWptIconManager`, `CActivityTrk`, `CGeoSearchWeb` | 2 each | |
-| `CTextEditWidget`, `CTemplateWidget`, `CPlotProfile`, `IGisItem` | 1 each | |
-
-About 55 sites in 14 files. `CGisListDB`, `CMouseNormal` and `IPlot` are the three a chapter is
-likely to need. Same treatment as `CGisListWks`: name the action after the member it is assigned
-to, and give the local `addAction` helpers an id parameter where one exists.
+Done: `CGisListWks` (52), `CGisListDB` (14), `CMouseNormal` (10), `CSearchLineEdit` (8),
+`CGeoSearch` (7), `IPlot` (6), `CGeoSearchWeb`, `CActivityTrk`, `CTableTrkInfo`,
+`CHistoryListWidget`, `CWptIconManager` (3), `CPlotProfile`, `CTemplateWidget`, `CTextEditWidget`,
+`IGisItem`.
 
 ## Adapters
 
-A surface with a name of its own is recorded by that name instead of a position. None of these is a
-prerequisite: the recorder lands with none of them and every click still records, verified. An
-adapter only upgrades a step from a position to a name.
+A surface with a name of its own is recorded by that name instead of a position. For the plot and
+the icon grid that is an upgrade - both recorded as a position before. For a workspace row's tool
+buttons it is the only way there is: they are painted into the row, carry no widget, and the press
+never reaches the filter as anything but a point in the viewport, so before the adapter such a
+click was recorded as the selection it also produced and the toggle was silently lost.
 
 | surface | adapter | state |
 |---|---|---|
 | canvas | `click` with lat/lon | exists |
-| plot | distance or time along the track — `setMouseFocusByDistance`/`ByTime`, `idxTotal` | vocabulary exists, not wired |
-| icon grid | `sigIconName` / `sigSelectedIcon` | vocabulary exists, not wired |
-| delegate buttons | extract a `buttonAt()` returning the role from `mousePressProject/Device/GeoSearch` | 3–4 functions |
+| plot | `click` with `x`, the axis' own value - metres on a linear axis, seconds on a time one | done |
+| icon grid | `click` with `icon`, the `<sym>` name | done |
+| workspace row buttons | `click` with `item` + `button`, the delegate's own button names | done |
+
+## State
+
+Done and regression tested against `doc/shots/test.json`, which comes out byte-identical:
+
+- The replay queue, and the picture taken as the scenario's last step.
+- `click`, `dclick`, `trigger`, `menu`, `key`, with a position stored as a fraction of an addressed
+  widget and never acted on without the `hit` it carries.
+- Recording: a menu entry becomes `trigger`, a context menu request becomes `menu`, and a press the
+  state diff had nothing to say about becomes `click`/`dclick`. Verified interactively by the writer.
+- A picture of the main window must carry an explicit `size`, else it is a counted failure.
+- Deleted: the `details` step, `hasDlgDetails()`, `CMainWindow::closeWidgetTab()`, and the six
+  `Details*` exposures.
+- A window a scenario opened is tagged as `widget: ""` plus `window: <class>`, and replay refuses
+  when another window is on top.
+- Every menu owner names its actions.
+- The three adapters, each verified end to end against a throwaway chapter: a row's visibility
+  button greys the project out, a plot click at 2400 lands on index 60 at 2.40 km, and an icon grid
+  click by name changes the waypoint's symbol in the tree.
+- Noise filtering: `pressIsStep()` records a press only when what it landed on acts on a click - a
+  button, a tab bar, a combo box, a header, or an item view row that exists. A splitter handle, a
+  dock title, a scroll bar, a menu bar, a label and the empty space under the last row are not
+  steps. It is a whitelist: a widget nobody has taught the recorder about records nothing, which is
+  recoverable, while a wrong click is a picture of the wrong state.
+- `--shoot`/`--doc` and their five companions are parsed under `QMS_DOC_MODE` only, so a user's
+  binary rejects them as unknown instead of accepting a switch that does nothing. The values stay on
+  `CAppOpts`, empty, so no reader of them needs a branch. qmaptool has its own copy of
+  `setup/` and never had them.
+- **One record of the window size.** `layout` no longer carries `saveGeometry()`; the size is the
+  shot's `size` and nothing else. `shootOne()` puts the window there before the scenario runs, and
+  `restoreState()` distributes the dock extents into it - the order is not optional, because
+  `saveState()` stores those extents in pixels. A shot the main window sizes and that says nothing
+  about how big it was is a counted failure; an exposure is exempt, being built free of the layout.
+  Doc mode records the window's size for every live shot, not only for one of the whole window.
+  `doc/shots/test.json` came out with zero failures for the first time.
+
+**Migration:** a scenario recorded with the old `details` step fails with *the scenario asks for
+"details" which this build does not know*. Record it again through the context menu. A `layout` step
+that still carries a `geometry` warns and is ignored; take the key out and give every shot of that
+scenario the size the geometry used to restore - `doc/shots/test.json` was migrated that way, and
+its pictures came out byte-identical apart from `track-scropt`, which had been failing.
 
 ## Open
 
-- Noise filtering: the filter sees hovers and scrolls that are not steps.
-- `--shoot`/`--doc` are still parsed in `src/common/setup/`, where the switch does not reach. They
-  do nothing without the subsystem; gating the parsing too would touch qmaptool's options as well.
+- `IPlot` no longer sets its own `objectName`, so a plot built in code is addressed positionally
+  (`framePlot/CPlotProfile#0`) and one placed by a `.ui` keeps its uic name. The instance tag the
+  track's focus owner is compared against moved to `IPlot::ownerTag`.
+- `CDetailsTrk` pins the main window to a 1648x717 minimum while the details page is open, so every
+  scenario recorded with it open carries that width. Not a documentation problem and not fixed here:
+  `details-minimum-size-plan.md`, QMS-1234.
+- `track-scropt`'s rectangle now frames its panel at the 1666 px window it was dragged on, and a
+  neighbouring bubble has moved into the top-left corner: at another width the map recentres and
+  what is beside the panel changes. Re-drag the rectangle if that corner matters.

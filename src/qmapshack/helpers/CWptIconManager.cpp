@@ -2127,6 +2127,7 @@ QString CWptIconManager::selectWptIcon(QWidget* parent) {
   // add an action that summons the wayoint icon dialog
   menu->addSeparator();
   QAction* more = menu->addAction(QIcon(":/icons/SetupWptSym.svgt"), tr("More..."));
+  more->setObjectName("actionMoreIcons");
   connect(more, &QAction::triggered, this, [&icon, this](bool) {
     CWptIconDialog dlg(&CMainWindow::self());
     connect(&dlg, &CWptIconDialog::sigSelectedIcon, this, [&icon](const QString& name) { icon = name; });
@@ -2134,6 +2135,7 @@ QString CWptIconManager::selectWptIcon(QWidget* parent) {
   });
 
   QAction* clear = menu->addAction(QIcon(":/icons/Cancel.svgt"), tr("Clear List"));
+  clear->setObjectName("actionClearIconList");
   connect(clear, &QAction::triggered, this, [](bool) {
     SETTINGS;
     cfg.setValue("Icons/lastIcons", {"Waypoint"});
@@ -2200,6 +2202,8 @@ QMenu* CWptIconManager::getWptIconMenu(QWidget* parent) {
     }
     const QPixmap& pixmap = loadIcon(icon.path);
     QAction* action = menu->addAction(pixmap, name);
+    // The GPX <sym> name: untranslated, and the same vocabulary the property carries.
+    action->setObjectName("actionWptIcon_" + name);
     action->setProperty("iconName", name);
   }
 

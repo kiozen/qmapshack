@@ -465,10 +465,14 @@ int CShotChapter::shootOne(const QJsonObject& shot, CShotContext& ctx) {
       qWarning() << "shoot:" << id << "wants the scenario" << scenario << "which this chapter has not got";
       return failures + 1;
     }
-    // The window's size first. Resizing it afterwards resizes the canvas, and the canvas size is
-    // what decides which piece of the world a map area lands on and where on screen the item sits
-    // that a click anchored its options to.
-    if (nullptr != main && renderSize.isValid() && shot["widget"].toString().isEmpty()) {
+    // The window's size first, and only here. Everything the scenario does is measured against it:
+    // the arrangement distributes dock extents across it, the canvas size decides which piece of
+    // the world a map area lands on and where on screen the item sits that a click anchored its
+    // options to, and a rectangle was dragged on it. Resizing again afterwards moves all of that.
+    //
+    // For every shot with a scenario, not only one of the whole window: a docker or a tab inside
+    // the window is sized by the window, so its picture depends on this number too.
+    if (nullptr != main && renderSize.isValid()) {
       main->resize(renderSize);
       CShotWriter::settle(main);
     }
@@ -498,6 +502,14 @@ int CShotChapter::shootOne(const QJsonObject& shot, CShotContext& ctx) {
         failures++;
         return;
       }
+      // What was on top when the picture was taken. A scenario that no longer opens it would
+      // otherwise photograph the window behind it and say nothing.
+      const QString& wanted = shot["window"].toString();
+      if (!wanted.isEmpty() && wanted != QString::fromLatin1(widget->metaObject()->className())) {
+        qWarning() << "shoot:" << id << "expects" << wanted << "on top and finds" << widget->metaObject()->className();
+        failures++;
+        return;
+      }
     }
 
     // Drive inputs by name. Unchecked by the compiler on purpose; an unknown name fails here. A key
@@ -517,18 +529,23 @@ int CShotChapter::shootOne(const QJsonObject& shot, CShotContext& ctx) {
     }
     CShotWriter::settle(widget);
 
-    // The scenario's own layout owns the window size from here on. Resizing again at render time
-    // would lay the canvas out afresh and move the map under a rectangle that was measured against
-    // this state - documentation mode never resizes twice, which is why it looked right there.
-    // Only for the main window: a dialog a step opened has a size of its own and rendering it at
-    // the window's would stretch it.
-    if (!scenario.isEmpty() && widget == main) {
-      renderSize = main->size();
+    // Measured: a dialog and a menu come out the same size on Linux and Windows, because their
+    // sizeHint decides. Anything the main window sizes does not - the same chapter gave 1660x741 on
+    // one and 1482x741 on the other - so such a picture has to say how big the window was. A window
+    // a step opened is not one of those: it brought its own size with it.
+    // An exposure is built free of the window's layout, so render() can grow it to its own hint.
+    const bool sizedByWindow =
+        !shot.contains("exposure") && ((widget == main) || (!widget->isWindow() && widget->window() == main));
+    if (sizedByWindow && !renderSize.isValid()) {
+      qWarning() << "shoot:" << id
+                 << "is sized by the main window and says nothing about how big it was, so it comes "
+                    "out differently on another machine. Take it again; documentation mode records one.";
+      failures++;
     }
 
-    // Only a window can be given a size. Anything inside the main window is sized by the layout, so
-    // resizing it here would be undone at the next layout pass and the picture would not match the
-    // number in the file. What decides such a picture's size is the chapter's stored arrangement.
+    // The window was already put at this size before the scenario ran, and everything the scenario
+    // produced is measured against it. Anything inside the window is sized by the layout, so
+    // handing the size on to render() would resize the wrong widget.
     if (!widget->isWindow() && renderSize.isValid()) {
       renderSize = QSize();
     }

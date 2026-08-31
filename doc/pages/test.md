@@ -24,3 +24,10 @@ click on the track, these are the options you get
 
 ![](../images/test/track-scropt.png)
 
+afasdfsdfqsgfqqs
+
+![](../images/test/track-details.png)
+
+asdgasgsf
+
+![](../images/test/track-energy.png)
