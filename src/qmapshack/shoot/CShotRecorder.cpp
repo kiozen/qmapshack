@@ -42,6 +42,7 @@
 #include "gis/CGisListWks.h"
 #include "gis/CGisWorkspace.h"
 #include "gis/IGisItem.h"
+#include "gis/prj/IGisProject.h"
 #include "gis/proj_x.h"
 #include "gis/trk/CGisItemTrk.h"
 #include "mouse/CMouseNormal.h"
@@ -109,6 +110,42 @@ CCanvas* canvasHolding(QWidget* widget) {
     }
   }
   return nullptr;
+}
+
+/// @brief Collect the items below this one whose details are a page of the window
+void collectDetails(const QTreeWidgetItem* item, QSet<QString>& paths) {
+  const IGisProject* project = dynamic_cast<const IGisProject*>(item);
+  const CGisItemTrk* trk = dynamic_cast<const CGisItemTrk*>(item);
+  const bool open = (nullptr != project && project->hasDlgDetails()) || (nullptr != trk && trk->hasDlgDetails());
+  if (open) {
+    const QString& path = CShotChapter::itemPathOf(item);
+    if (!path.isEmpty()) {
+      paths << path;
+    }
+  }
+  for (int i = 0; i < item->childCount(); i++) {
+    collectDetails(item->child(i), paths);
+  }
+}
+
+/**
+   @brief Take every details page back out of the window.
+
+   A canvas is the only page the window keeps on its own; everything else is a details page some
+   step put there, and a build takes one picture after another in one application.
+ */
+void closeDetailPages(CShotContext& ctx) {
+  CMainWindow* main = ctx.mainWindow();
+  QTabWidget* tabs = centralTabs(ctx);
+  if (nullptr == main || nullptr == tabs) {
+    return;
+  }
+  for (int i = tabs->count() - 1; i >= 0; i--) {
+    QWidget* page = tabs->widget(i);
+    if (nullptr == qobject_cast<CCanvas*>(page)) {
+      main->closeWidgetTab(page);
+    }
+  }
 }
 
 /**
@@ -272,6 +309,18 @@ QSet<QString> CShotRecorder::expandedNow() const {
   return paths;
 }
 
+QSet<QString> CShotRecorder::detailsNow() const {
+  QSet<QString> paths;
+  CGisListWks* list = ctx.wksList();
+  if (nullptr == list) {
+    return paths;
+  }
+  for (int i = 0; i < list->topLevelItemCount(); i++) {
+    collectDetails(list->topLevelItem(i), paths);
+  }
+  return paths;
+}
+
 QList<CShotRecorder::input_t> CShotRecorder::inputsOf() const {
   QList<input_t> inputs;
   CMainWindow* main = ctx.mainWindow();
@@ -335,6 +384,7 @@ QList<CShotRecorder::input_t> CShotRecorder::inputsOf() const {
 void CShotRecorder::snapshot() {
   lastSelection = selectionNow();
   lastExpanded = expandedNow();
+  lastDetails = detailsNow();
 
   lastInputs.clear();
   const QList<input_t>& inputs = inputsOf();
@@ -367,6 +417,29 @@ void CShotRecorder::captureChanges() {
     action["do"] = "expand";
     action["item"] = path;
     actions.append(action);
+  }
+
+  // Before the inputs: opening the details is what puts their controls in the window at all, so a
+  // value driven into one only means something once the page is there.
+  const QSet<QString>& details = detailsNow();
+  QStringList opened;
+  for (const QString& path : details) {
+    if (!lastDetails.contains(path)) {
+      opened << path;
+    }
+  }
+  opened.sort();
+  for (const QString& path : std::as_const(opened)) {
+    QJsonObject action;
+    action["do"] = "details";
+    action["item"] = path;
+    actions.append(action);
+  }
+  // Closed again, so the step that opened them is not part of the scenario either.
+  for (const QString& path : std::as_const(lastDetails)) {
+    if (!details.contains(path)) {
+      forgetDetailsOn(path);
+    }
   }
 
   const QList<input_t>& inputs = inputsOf();
@@ -419,6 +492,16 @@ void CShotRecorder::forgetClickOn(const QString& item) {
   for (qsizetype i = actions.size() - 1; i >= 0; i--) {
     const QJsonObject& action = actions.at(i).toObject();
     if ("click" == action["do"].toString() && item == action["item"].toString()) {
+      actions.removeAt(i);
+      return;
+    }
+  }
+}
+
+void CShotRecorder::forgetDetailsOn(const QString& item) {
+  for (qsizetype i = actions.size() - 1; i >= 0; i--) {
+    const QJsonObject& action = actions.at(i).toObject();
+    if ("details" == action["do"].toString() && item == action["item"].toString()) {
       actions.removeAt(i);
       return;
     }
@@ -481,6 +564,10 @@ bool CShotRecorder::eventFilter(QObject* watched, QEvent* event) {
 
 int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx) {
   int failures = 0;
+  // A `details` step adds a page the arrangement was recorded with, and it does not exist yet while
+  // that arrangement is applied. A tab index past the last page is silently ignored, so the central
+  // tab is chosen once every step has run.
+  int wantedTab = NOIDX;
 
   for (const QJsonValue& value : actions) {
     const QJsonObject& action = value.toObject();
@@ -505,12 +592,29 @@ int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx) {
       continue;
     }
 
+    if ("details" == what) {
+      const QString& path = action["item"].toString();
+      QTreeWidgetItem* item = CShotChapter::resolveItemPath(ctx.wksList(), path);
+      // A track and a project are the two whose details are a page of the window. Every other
+      // edit() runs a modal dialog, which a headless run would sit in forever - such a picture is
+      // an exposure, not a scenario.
+      if (IGisProject* project = dynamic_cast<IGisProject*>(item); nullptr != project) {
+        project->edit();
+      } else if (CGisItemTrk* trk = dynamic_cast<CGisItemTrk*>(item); nullptr != trk) {
+        trk->edit();
+      } else {
+        qWarning() << "shoot:" << path << "has no details this scenario can open";
+        failures++;
+      }
+      continue;
+    }
+
     if ("set" == what) {
       const QString& address = action["widget"].toString();
       const QString& property = action["property"].toString();
       QWidget* widget = CShotChapter::resolve(ctx.mainWindow(), address);
-      if (nullptr == widget || !widget->setProperty(property.toLatin1(), action["value"].toVariant())) {
-        qWarning() << "shoot: the scenario cannot set" << address << property;
+      if (!CShotChapter::driveProperty(widget, property, action["value"].toVariant())) {
+        qWarning() << "shoot: the scenario cannot set" << address << property << "to" << action["value"].toVariant();
         failures++;
       }
       continue;
@@ -531,8 +635,8 @@ int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx) {
       if (!state.isEmpty()) {
         main->restoreState(state);
       }
-      if (QTabWidget* tabs = centralTabs(ctx); nullptr != tabs && action.contains("tab")) {
-        tabs->setCurrentIndex(action["tab"].toInt());
+      if (action.contains("tab")) {
+        wantedTab = action["tab"].toInt();
       }
       CShotWriter::settle(main);
       continue;
@@ -588,10 +692,23 @@ int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx) {
     failures++;
   }
 
+  if (NOIDX != wantedTab) {
+    QTabWidget* tabs = centralTabs(ctx);
+    if (nullptr == tabs || wantedTab >= tabs->count()) {
+      qWarning() << "shoot: the scenario was arranged around a tab" << wantedTab << "this window has not got";
+      failures++;
+    } else {
+      tabs->setCurrentIndex(wantedTab);
+      CShotWriter::settle(tabs);
+    }
+  }
+
   return failures;
 }
 
 void CShotRecorder::reset(CShotContext& ctx) {
+  closeDetailPages(ctx);
+
   if (CCanvas* canvas = ctx.canvas(); nullptr != canvas) {
     if (CMouseNormal* mouse = canvas->findChild<CMouseNormal*>(); nullptr != mouse) {
       mouse->clearScreenOption();
@@ -615,6 +732,15 @@ void CShotRecorder::clear(const QJsonArray& actions, CShotContext& ctx) {
   }
   if (CMouseNormal* mouse = canvas->findChild<CMouseNormal*>(); nullptr != mouse) {
     mouse->clearScreenOption();
+  }
+
+  // A details page the scenario opened stays a page of the window, so the next picture would be
+  // taken with the tab bar this one added.
+  for (const QJsonValue& value : actions) {
+    if ("details" == value.toObject()["do"].toString()) {
+      closeDetailPages(ctx);
+      break;
+    }
   }
 
   // Opening an item's options gives a track a click focus, which changes the way it draws. The

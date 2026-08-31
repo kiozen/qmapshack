@@ -1006,6 +1006,17 @@ doc/shots/fixture/shots.ini       the base a chapter opens on
   the next one loads the demo project again.
 - **Losing or changing a shot's scenario reduces the entry to its bare `id` and deletes the image**:
   a widget address and a rectangle frame something else in another state.
+- **A details page is state, and is recorded as one.** A track's and a project's `edit()` adds a
+  page to the central tab widget and leaves it there, so a scenario carries
+  `{"do": "details", "item": <path>}` for it and `IGisProject`/`CGisItemTrk::hasDlgDetails()` is
+  what the diff reads. Every other `edit()` runs a modal `exec()` - those belong to the exposure
+  catalog, and replay refuses them so a headless run cannot sit in one. `reset()` and `clear()`
+  take the pages back out.
+- **The arrangement's `tab` index is applied after every other step**, because a page a `details`
+  step adds does not exist while `restoreState()` runs - and `QTabWidget` drops an index past its
+  last page without a word.
+- **`CShotChapter::driveProperty()` is how a `set` reaches a widget.** `setProperty()` answers
+  whether the property exists, never whether the value took, so the value is read back.
 
 A `--shoot` or `--doc` run must set `CMapDraw::setCacheRoot()` and `CGisListWks::setDatabasePath()`
 before `CMainWindow` is constructed, or it prunes the user's tile cache and empties their

@@ -124,6 +124,9 @@ class IGisProject : public IWksItem {
    */
   void edit();
 
+  /// @brief Are the project's details a page of the main window's tab widget?
+  bool hasDlgDetails() const { return !dlgDetails.isNull(); }
+
   /**
      @brief Return true if saving should be skipped.
    */
@@ -501,7 +504,8 @@ class IGisProject : public IWksItem {
   bool autoSyncToDevPending = false;  ///< flag to show that a sync to device is already pending
 
   metadata_t metadata;
-  /// passthrough xmlns:* declarations (prefix -> URI) found on the loaded GPX root that are not one of the namespaces above
+  /// passthrough xmlns:* declarations (prefix -> URI) found on the loaded GPX root that are not one of the namespaces
+  /// above
   QMap<QString, QString> extraNamespaces;
   QString nameSuffix;
 

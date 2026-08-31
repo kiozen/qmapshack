@@ -197,6 +197,18 @@ QWidget* CShotChapter::resolve(QWidget* main, const QString& address) {
   return current;
 }
 
+bool CShotChapter::driveProperty(QObject* target, const QString& property, const QVariant& value) {
+  const QByteArray& name = property.toLatin1();
+  if (nullptr == target || !target->setProperty(name, value)) {
+    return false;
+  }
+  // JSON knows one number type, so the answer is compared in the property's own: 1 as a double is
+  // the same currentIndex as 1 as an int.
+  const QVariant& now = target->property(name);
+  QVariant wanted = value;
+  return !wanted.convert(now.metaType()) || wanted == now;
+}
+
 QString CShotChapter::itemPathOf(const QTreeWidgetItem* item) {
   if (nullptr == item) {
     return {};
@@ -482,8 +494,8 @@ int CShotChapter::shootOne(const QJsonObject& shot, CShotContext& ctx) {
     // The widget part is an address relative to the photographed widget, so an unnamed tab widget
     // is reachable as QTabWidget#0 just like anywhere else.
     QObject* driven = it.key().contains('.') ? resolve(widget, name) : widget;
-    if (nullptr == driven || !driven->setProperty(property.toLatin1(), it.value().toVariant())) {
-      qWarning() << "shoot:" << id << "cannot set" << it.key();
+    if (!driveProperty(driven, property, it.value().toVariant())) {
+      qWarning() << "shoot:" << id << "cannot set" << it.key() << "to" << it.value().toVariant();
       failures++;
     }
   }

@@ -79,6 +79,8 @@ class CMainWindow : public QMainWindow, private Ui::IMainWindow {
   void addDemList(CDemList* list);
   void addPoiList(CPoiList* list);
   void addWidgetToTab(QWidget* w);
+  /// @brief Take a page added by addWidgetToTab() back out again; no-op for anything else
+  void closeWidgetTab(QWidget* w);
 
   bool isScaleVisible() const;
   bool isGridVisible() const;
