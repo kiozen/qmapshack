@@ -19,24 +19,22 @@
 #include <QtSystemDetection>
 #if defined(Q_OS_WIN32)
 
-#include "setup/CAppSetupWin.h"
+// windows.h must be the only Win32 include here: it defines the target architecture the rest
+// of the SDK headers need, and clang-format would sort a header named before it in front.
+#include <windows.h>
 
 #include <QAbstractNativeEventFilter>
 #include <QMessageBox>
 #include <QWindow>
 
-#include <windows.h>
-#include <winbase.h>
-#include <errhandlingapi.h>
-#include <fileapi.h>
-
 #include "config.h"
+#include "setup/CAppSetupWin.h"
 #include "version.h"
 
-class windowsEventFilter: public QAbstractNativeEventFilter {
+class windowsEventFilter : public QAbstractNativeEventFilter {
  public:
   bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override {
-    MSG *msg = static_cast<MSG *>(message);
+    MSG* msg = static_cast<MSG*>(message);
     if (msg->message == WM_CLOSE) {
       HWND winId = msg->hwnd;
       for (auto const item : qApp->topLevelWindows()) {
@@ -63,8 +61,12 @@ void CAppSetupWin::initQMapShack() {
   prepareGdal(gdalDataDir, gdalPluginsDir, projDataDir);
 
   const QString& appResourceDir = QString("%1\\translations").arg(apppath).toUtf8();
-  prepareTranslator(appResourceDir, "qtbase_");
-  prepareTranslator(appResourceDir, "qmapshack_");
+  // Qt ships its catalogs with the installation and the application's arrive only when it is
+  // installed, so a locale that has the one but not the other puts translated buttons in an
+  // untranslated window. Qt's follows the application's.
+  if (prepareTranslator(appResourceDir, "qmapshack_")) {
+    prepareTranslator(appResourceDir, "qtbase_");
+  }
 
   // limit PATH to application directory in order to avoid that wrong .dll's are loaded
   path = apppath.toUtf8();
@@ -109,25 +111,25 @@ QString CAppSetupWin::helpFile() {
 bool CAppSetupWin::setLock() {
   const QString& fileName = userDataPath() % "/." % qApp->applicationName() % ".lock";
   qDebug() << "Try to lock file" << fileName << "...";
-  HANDLE hd = CreateFileW((const wchar_t*)fileName.utf16(),
-              GENERIC_READ|GENERIC_WRITE, 0,
-              NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  HANDLE hd = CreateFileW((const wchar_t*)fileName.utf16(), GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_ALWAYS,
+                          FILE_ATTRIBUTE_NORMAL, NULL);
   if (hd != INVALID_HANDLE_VALUE) {
     qDebug() << "... Success";
     return true;
   }
   DWORD errorId = GetLastError();
   wchar_t errorMsg[256];
-  FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM|FORMAT_MESSAGE_IGNORE_INSERTS|FORMAT_MESSAGE_MAX_WIDTH_MASK,
-               NULL, errorId, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), 
-               errorMsg, (sizeof(errorMsg) / sizeof(wchar_t)), NULL);
+  FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK, NULL,
+                 errorId, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), errorMsg, (sizeof(errorMsg) / sizeof(wchar_t)),
+                 NULL);
   if (errorId == ERROR_SHARING_VIOLATION) {
     qDebug().noquote() << "..." << QString::fromUtf16((const char16_t*)errorMsg);
     return false;
   }
-  QMessageBox::critical(nullptr, tr("Fatal..."),
-     tr("Failed to lock file<br>%1<br>%2").arg(fileName, QString::fromUtf16((const char16_t*)errorMsg)));
+  QMessageBox::critical(
+      nullptr, tr("Fatal..."),
+      tr("Failed to lock file<br>%1<br>%2").arg(fileName, QString::fromUtf16((const char16_t*)errorMsg)));
   exit(-1);
 }
 
-#endif // defined(Q_OS_WIN32)
+#endif  // defined(Q_OS_WIN32)

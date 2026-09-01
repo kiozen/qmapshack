@@ -1054,6 +1054,7 @@ if(QMS_DOC_MODE)
     target_sources(${APPLICATION_NAME} PRIVATE
         shoot/CShotChapter.cpp
         shoot/CShotContext.cpp
+        shoot/CShotDocLauncher.cpp
         shoot/CShotDocMode.cpp
         shoot/CShotDocPanel.cpp
         shoot/CShotEntry.cpp

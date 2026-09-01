@@ -18,9 +18,9 @@
 
 #include "setup/IAppSetup.h"
 
-#include <QFont>
-
 #include <gdal.h>
+
+#include <QFont>
 
 #if defined(Q_OS_MAC)
 #include "setup/CAppSetupMac.h"
@@ -29,10 +29,9 @@
 #elif defined(Q_OS_WIN32)
 #include "setup/CAppSetupWin.h"
 #endif
+#include "helpers/CSettings.h"
 #include "setup/CCommandProcessor.h"
 #include "setup/CLogHandler.h"
-
-#include "helpers/CSettings.h"
 
 IAppSetup* IAppSetup::pSelf = nullptr;
 
@@ -116,7 +115,7 @@ QString IAppSetup::path(QString path, QString subdir, bool mkdir, QString debugN
   return pathDir.absolutePath();
 }
 
-void IAppSetup::prepareTranslator(QString translationPath, QString translationPrefix) {
+bool IAppSetup::prepareTranslator(QString translationPath, QString translationPrefix) {
   QString locale = qlOpts->locale != nullptr ? qlOpts->locale : QLocale::system().name();
   QDir dir(translationPath);
   if (!QFile::exists(dir.absoluteFilePath(translationPrefix + locale + ".qm"))) {
@@ -133,10 +132,12 @@ void IAppSetup::prepareTranslator(QString translationPath, QString translationPr
   if (qtTranslator->load(translationPrefix + locale, translationPath)) {
     app->installTranslator(qtTranslator);
     qDebug() << "using file '" + qtTranslator->filePath() + "' for translations.";
-  } else {
-    qWarning() << "no translations found for file '" + translationPath + "/" + translationPrefix + locale +
-                      ".qm' (using default).";
+    return true;
   }
+
+  qWarning() << "no translations found for file '" + translationPath + "/" + translationPrefix + locale +
+                    ".qm' (using default).";
+  return false;
 }
 
 void IAppSetup::initLogHandler() { CLogHandler::initLogHandler(logDir(), qlOpts->logfile, qlOpts->debug); }

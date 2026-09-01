@@ -70,6 +70,10 @@ CAppOpts* CCommandProcessor::processOptions(const QStringList& arguments) {
   QString shootOnly;
   QString docDir;
   QString docChapter;
+  QString docScenario;
+  QString docChannel;
+  QString docPython;
+  QString docScreen;
 
 #ifdef QMS_DOC_MODE
   QCommandLineOption shootOption(QStringList() << "shoot",
@@ -103,6 +107,31 @@ CAppOpts* CCommandProcessor::processOptions(const QStringList& arguments) {
   QCommandLineOption docChapterOption(QStringList() << "doc-chapter", tr("Which chapter F9 appends to."), tr("name"),
                                       "scratch");
   parser.addOption(docChapterOption);
+
+  QCommandLineOption docScenarioOption(
+      QStringList() << "doc-scenario",
+      tr("The state to come up in. Only the launcher passes it, and it is what makes a process the "
+         "one the writer works in rather than the one that shows the panel."),
+      tr("name"));
+  parser.addOption(docScenarioOption);
+
+  QCommandLineOption docChannelOption(QStringList() << "doc-channel",
+                                      tr("Where the state process reports what the writer did back to."), tr("name"));
+  parser.addOption(docChannelOption);
+
+  QCommandLineOption docPythonOption(
+      QStringList() << "doc-python",
+      tr("The interpreter to run shots.py with. shots.py hands over the one it is running under, "
+         "because searching PATH for it finds the store's python3 alias on Windows."),
+      tr("path"));
+  parser.addOption(docPythonOption);
+
+  QCommandLineOption docScreenOption(
+      QStringList() << "doc-screen",
+      tr("The screen the panel is on. The session belongs where the writer started it, and a stored "
+         "geometry carries a position on the whole desktop."),
+      tr("name"));
+  parser.addOption(docScreenOption);
 #endif
 
   parser.addPositionalArgument("files", tr("Files for future use."));
@@ -117,10 +146,15 @@ CAppOpts* CCommandProcessor::processOptions(const QStringList& arguments) {
   shootOnly = parser.value(onlyOption);
   docDir = parser.value(docOption);
   docChapter = parser.value(docChapterOption);
+  docScenario = parser.value(docScenarioOption);
+  docChannel = parser.value(docChannelOption);
+  docPython = parser.value(docPythonOption);
+  docScreen = parser.value(docScreenOption);
 #endif
 
   return new CAppOpts(parser.isSet(nosplashOption), parser.isSet(debugOption), parser.isSet(logfileOption),
                       parser.value(configOption), parser.value(localeOption), parser.value(fontFamilyOption),
                       parser.value(fontSizeOption), parser.value(colorSchemeOption), shootDir, shootTask, shootTarget,
-                      shootScenario, shootOnly, docDir, docChapter, parser.positionalArguments());
+                      shootScenario, shootOnly, docDir, docChapter, docScenario, docChannel, docPython, docScreen,
+                      parser.positionalArguments());
 }

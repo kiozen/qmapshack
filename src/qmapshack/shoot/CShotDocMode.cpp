@@ -22,6 +22,7 @@
 #include <QClipboard>
 #include <QCryptographicHash>
 #include <QCursor>
+#include <QDataStream>
 #include <QDebug>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -41,6 +42,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QLocalSocket>
 #include <QMenu>
 #include <QMessageBox>
 #include <QMetaObject>
@@ -51,6 +53,7 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScreen>
 #include <QSet>
 #include <QSettings>
 #include <QTabWidget>
@@ -65,7 +68,6 @@
 #include "helpers/CSettings.h"
 #include "shoot/CShotChapter.h"
 #include "shoot/CShotContext.h"
-#include "shoot/CShotDocPanel.h"
 #include "shoot/CShotFixture.h"
 #include "shoot/CShotRecorder.h"
 #include "shoot/CShotRegistry.h"
@@ -194,6 +196,45 @@ class CShotPreviewLabel : public QLabel {
 const QString kBaseConfig = "doc/shots/fixture/shots.ini";
 
 /**
+   @brief QWidget::saveGeometry() with what only holds on this machine taken out.
+
+   The record carries the screen the window was on and how wide that screen was, and
+   QWidget::restoreGeometry() throws the whole record away when the width it is replayed against
+   differs by more than a quarter (Qt 6.10.2: `factor < 0.8 || factor > 1.25` returns false, and
+   nothing is applied). A width of 0 is what Qt 5.3 and earlier stored and takes the other branch,
+   which only rejects a window wider than one and a half screens - so a base stored on one machine
+   still sizes the window on the next. The position is left alone: restoreGeometry() moves a window
+   that would land off screen back onto it.
+
+   @return The record to store, or what came in when it is not one this knows
+ */
+QByteArray portableGeometry(const QByteArray& geometry) {
+  QDataStream in(geometry);
+  in.setVersion(QDataStream::Qt_4_0);
+
+  quint32 magic = 0;
+  quint16 major = 0;
+  quint16 minor = 0;
+  QRect frame;
+  QRect normal;
+  qint32 screen = 0;
+  quint8 maximized = 0;
+  quint8 fullScreen = 0;
+  qint32 screenWidth = 0;
+  QRect rect;
+  in >> magic >> major >> minor >> frame >> normal >> screen >> maximized >> fullScreen >> screenWidth >> rect;
+  if (QDataStream::Ok != in.status() || 0x1D9D0CB != magic || 3 != major) {
+    return geometry;
+  }
+
+  QByteArray out;
+  QDataStream stream(&out, QIODevice::WriteOnly);
+  stream.setVersion(QDataStream::Qt_4_0);
+  stream << magic << major << minor << frame << normal << qint32(0) << maximized << fullScreen << qint32(0) << rect;
+  return out;
+}
+
+/**
    @brief Does the value name a place on this machine?
 
    Such a key cannot be committed: it is only right here. `shots.py` injects the fixture's own paths
@@ -248,8 +289,13 @@ QString slug(const QString& text) {
 
 }  // namespace
 
-CShotDocMode::CShotDocMode(const QDir& repo, const QString& chapter, QObject* parent)
-    : QObject(parent), chapter(chapter.isEmpty() ? "scratch" : chapter), repo(repo) {
+CShotDocMode::CShotDocMode(const QDir& repo, const QString& chapter, const QString& scenario, QObject* parent)
+    : QObject(parent),
+      chapter(chapter.isEmpty() ? "scratch" : chapter),
+      // The launcher spells the base out, because an option that is simply absent is a mistake it
+      // cannot tell from a state it meant.
+      ownScenario(CShotChapter::kBaseScenario == scenario ? QString() : scenario),
+      repo(repo) {
   writer = new CShotWriter(QDir(repo.absoluteFilePath("doc/images")), "en");
   ctx = new CShotContext(*writer, "en");
   recorder = new CShotRecorder(*ctx, this);
@@ -261,7 +307,24 @@ CShotDocMode::~CShotDocMode() {
   delete writer;
 }
 
-void CShotDocMode::start() { QTimer::singleShot(0, this, &CShotDocMode::slotBuildFixture); }
+void CShotDocMode::start() {
+  // The launcher is listening before it starts us, so the channel is up by the time the fixture is.
+  if (!qlOpts->docChannel.isEmpty()) {
+    channel = new QLocalSocket(this);
+    connect(channel, &QLocalSocket::readyRead, this, [this]() {
+      while (channel->canReadLine()) {
+        obey(QString::fromUtf8(channel->readLine()).trimmed());
+      }
+    });
+    // The state process belongs to the supervisor. If that goes - closed, killed, crashed - this
+    // one has nothing left to be a state for, and an orphan holding a map and a window is worse
+    // than no state at all.
+    connect(channel, &QLocalSocket::disconnected, qApp, []() { qApp->exit(0); });
+    channel->connectToServer(qlOpts->docChannel);
+  }
+
+  QTimer::singleShot(0, this, &CShotDocMode::slotBuildFixture);
+}
 
 void CShotDocMode::slotBuildFixture() {
   // CMainWindow defers slotLateInit() and slotSanityTest() by 100 ms; the fixture must not land in
@@ -274,40 +337,96 @@ void CShotDocMode::slotBuildFixture() {
 
   CShotFixture::build(*ctx);
 
-  // Before anything is replayed on top: this is what the (base) row puts back.
+  // Before anything is replayed on top: what a recording starts from, and what the base is.
   baseState = QJsonArray{CShotRecorder::layoutOf(*ctx), CShotRecorder::viewOf(*ctx)};
 
-  // Parented on the main window, not ctx->parent(): that one is the visible canvas, a page inside
-  // the central tab widget.
-  panel = new CShotDocPanel(chapter, CMainWindow::isNull() ? nullptr : &CMainWindow::self());
-  panel->setPickedHandler([this](const QString& id) { showShot(id); });
-  panel->setScenarioPickedHandler([this](const QString& name) {
-    selectedScenario = name;
-    showScenario(name);
-  });
-  panel->setRecordHandler([this]() { toggleRecording(); });
-  panel->setRenameHandler([this]() { renameScenario(); });
-  panel->setDeleteScenarioHandler([this]() { deleteScenario(); });
-  panel->setRebindHandler([this](const QString& id, const QString& scenario) { rebindShot(id, scenario); });
-  panel->setTakeRegionHandler([this]() { takeRegion(); });
-  panel->setReapHandler([this]() { reapUnused(); });
-  panel->setRetakeHandler([this]() { retakeChapter(); });
-  panel->setStoreLayoutHandler([this]() { updateScenario(); });
-  // What the writer does to the panel is not part of a scenario.
-  recorder->setIgnored(panel);
-  panel->show();
-  panel->raise();
-  refreshPanel(tr("Ready."));
-  qInfo() << "doc: panel" << panel->geometry() << "visible" << panel->isVisible() << "chapter" << chapter;
+  // Applied again, after the docks have been populated: what CMainWindow restored in its
+  // constructor is a size the layout then grows past, so the window the writer set up as the base
+  // came back 120 pixels taller than the base says.
+  {
+    SETTINGS;
+    cfg.beginGroup("MainWindow");
+    const QByteArray& geometry = cfg.value("geometry").toByteArray();
+    cfg.endGroup();
+    if (!geometry.isEmpty() && !CMainWindow::isNull()) {
+      CMainWindow::self().restoreGeometry(geometry);
+    }
+  }
+
+  syncScenarios();
+  setUpScenario(ownScenario);
+  // Last, so nothing a scenario replays moves the window again.
+  moveToWritersScreen();
+  qInfo() << "doc: state" << (ownScenario.isEmpty() ? QString("(base)") : ownScenario) << "chapter" << chapter;
 }
 
+void CShotDocMode::moveToWritersScreen() {
+  // A stored geometry carries a position on the whole desktop, so on a multi-screen desk the
+  // application landed wherever that pointed - away from the panel, and again on every scenario
+  // change. Only the size is a record; where the window sits is the writer's screen.
+  if (qlOpts->docScreen.isEmpty() || CMainWindow::isNull()) {
+    return;
+  }
+
+  const QList<QScreen*>& screens = QGuiApplication::screens();
+  const QScreen* target = nullptr;
+  for (const QScreen* screen : screens) {
+    if (screen->name() == qlOpts->docScreen) {
+      target = screen;
+      break;
+    }
+  }
+  if (nullptr == target) {
+    return;
+  }
+
+  // move() places the frame, so the frame is what is centred.
+  CMainWindow& window = CMainWindow::self();
+  QRect frame = window.frameGeometry();
+  frame.moveCenter(target->availableGeometry().center());
+  window.move(frame.topLeft());
+  qInfo() << "doc: window on" << target->name() << window.frameGeometry();
+}
+
+void CShotDocMode::obey(const QString& line) {
+  if ("region" == line) {
+    takeRegion();
+  } else if (line.startsWith("update ")) {
+    updateScenario(line.mid(7));
+  } else if ("record" == line || "stop" == line) {
+    toggleRecording();
+  } else if (line.startsWith("name ")) {
+    storeRecording(line.mid(5));
+  } else if ("discard" == line) {
+    pendingActions = QJsonArray();
+  } else if (line.startsWith("select ")) {
+    wantedShot = line.mid(7);
+  } else if ("select" == line) {
+    wantedShot.clear();
+  } else if ("sync" == line) {
+    syncScenarios();
+  } else {
+    qWarning() << "doc: the launcher asked for" << line << "which this build does not know";
+  }
+}
+
+void CShotDocMode::send(const QString& line) {
+  if (nullptr == channel || QLocalSocket::ConnectedState != channel->state()) {
+    qInfo() << "doc:" << line;
+    return;
+  }
+  channel->write(line.toUtf8() + '\n');
+  channel->flush();
+}
+
+void CShotDocMode::report(const QString& status) { send("status " + status); }
+
 bool CShotDocMode::eventFilter(QObject* watched, QEvent* event) {
-  // The panel is a window of its own and would outlive the main window, keeping the process alive
-  // with nothing to look at. It goes when the application does.
-  if (QEvent::Close == event->type() && nullptr != panel && !CMainWindow::isNull() && watched == &CMainWindow::self()) {
-    panel->hide();
-    panel->deleteLater();
-    panel = nullptr;
+  // The writer closing the application ends the state, and the supervisor ends the session with it.
+  // Said outright rather than left to quitOnLastWindowClosed, which did not end this process.
+  if (QEvent::Close == event->type() && !CMainWindow::isNull() && watched == &CMainWindow::self()) {
+    qInfo() << "doc: the application window was closed; the state ends";
+    qApp->exit(0);
   }
 
   if (QEvent::KeyPress == event->type() && !tagging) {
@@ -320,7 +439,7 @@ bool CShotDocMode::eventFilter(QObject* watched, QEvent* event) {
       // Not while a scenario is being recorded: taking a picture drives the application itself,
       // and every step of that would land in the recording as something the writer performed.
       if (nullptr != recorder && recorder->isRecording()) {
-        refreshPanel(tr("Stop the recording first - a picture cannot be taken while one runs."));
+        report(tr("Stop the recording first - a picture cannot be taken while one runs."));
         return true;
       }
       tagging = true;
@@ -331,83 +450,6 @@ bool CShotDocMode::eventFilter(QObject* watched, QEvent* event) {
   }
   return QObject::eventFilter(watched, event);
 }
-
-void CShotDocMode::refreshPanel(const QString& status) {
-  if (nullptr == panel) {
-    return;
-  }
-
-  // What the page asks for. A picture the page uses but the chapter does not know is the one the
-  // writer still has to take.
-  const QString& pagePath = "doc/pages/" + chapter + ".md";
-  const bool hasPage = QFileInfo::exists(repo.absoluteFilePath(pagePath));
-  panel->setPage(pagePath, hasPage);
-  const QSet<QString>& referenced = pageReferences();
-
-  // The scenarios first: every picture's row carries a combo box built out of this list.
-  panel->setScenarios(CShotChapter::scenarioNames(chapterPath()), selectedScenario);
-
-  QList<CShotDocPanel::entry_t> entries;
-  QSet<QString> known;
-
-  QFile file(chapterPath());
-  if (file.open(QIODevice::ReadOnly)) {
-    const QJsonArray& shots = QJsonDocument::fromJson(file.readAll()).object()["shots"].toArray();
-    for (const QJsonValue& value : shots) {
-      const QJsonObject& shot = value.toObject();
-
-      CShotDocPanel::entry_t entry;
-      entry.id = shot["id"].toString();
-      entry.scenario = shot["scenario"].toString();
-      entry.note = shot["note"].toString();
-
-      const QString& path = imagePath(entry.id);
-      const bool exists = QFileInfo::exists(path);
-      entry.imagePath = exists ? path : QString();
-
-      if (!referenced.contains(entry.id)) {
-        entry.state = CShotDocPanel::eNotUsed;
-      } else if (!exists) {
-        entry.state = CShotDocPanel::eNoImage;
-      } else {
-        entry.state = CShotDocPanel::eTaken;
-      }
-
-      entry.changed = changedShots.contains(entry.id);
-      known << entry.id;
-      entries << entry;
-    }
-  }
-
-  QStringList missing = QStringList(referenced.begin(), referenced.end());
-  missing.sort();
-  for (const QString& id : std::as_const(missing)) {
-    if (known.contains(id)) {
-      continue;
-    }
-    CShotDocPanel::entry_t entry;
-    entry.id = id;
-    entry.note = tr("the page uses it, the chapter does not have it");
-    entry.state = CShotDocPanel::eMissing;
-    entries << entry;
-  }
-
-  panel->setShots(entries);
-
-  // What just happened wins: it is the answer to what the writer did, and it is the only place a
-  // step of theirs is acknowledged at all. A missing page is the reason an empty list is empty and
-  // is worth saying, but only when there is nothing more recent to say.
-  if (!status.isEmpty()) {
-    panel->setStatus(status);
-  } else if (!hasPage) {
-    panel->setStatus(tr("Write %1 first and put an image line where you want a picture. Its names "
-                        "are what appears here.")
-                         .arg(pagePath));
-  } else if (entries.isEmpty()) {
-    panel->setStatus(tr("%1 references no picture yet. Add an image line to it.").arg(pagePath));
-  }
-}
-
 QWidget* CShotDocMode::activeTarget() {
   // An open menu is a popup, not the active window, and it is a documentation image in its own
   // right - so it is asked for first.
@@ -462,54 +504,32 @@ QJsonObject CShotDocMode::shotOf(const QString& id) const {
   }
   return {};
 }
-
-void CShotDocMode::showShot(const QString& id) {
-  const QJsonObject& shot = shotOf(id);
-  if (shot.isEmpty()) {
-    refreshPanel(tr("%1 is a picture your page asks for and this chapter has not taken yet. Pick "
-                    "the state to take it in, or take it in the base.")
-                     .arg(id));
-    return;
-  }
-  // An entry with no scenario key is one taken in the base, which is a state like any other.
-  selectedScenario = shot["scenario"].toString();
-  showScenario(selectedScenario);
-}
-
-void CShotDocMode::showScenario(const QString& name) {
+void CShotDocMode::setUpScenario(const QString& name) {
   if (name.isEmpty()) {
-    CShotRecorder::reset(*ctx);
     CShotRecorder::replay(baseState, *ctx);
-    refreshPanel(
-        tr("The window is back in the base. Point at what to photograph and press "
-           "Ctrl+Shift+F9."));
+    send("ready " + tr("The window is in the base. Point at what to photograph and press Ctrl+Shift+F9."));
     return;
   }
 
   const QJsonObject& recorded = CShotChapter::scenariosOf(chapterPath());
   if (!recorded.contains(name)) {
-    refreshPanel(tr("This chapter has no scenario called %1.").arg(name));
+    report(tr("This chapter has no scenario called %1.").arg(name));
     return;
   }
 
-  refreshPanel(tr("Setting %1 up...").arg(name));
-  // From the chapter's start, never on top of what is on screen. A scenario is a state, not a
-  // difference from whatever the last one left - and documentation mode holds that state on purpose,
-  // so nothing else takes it down. Replaying over it flips every step that toggles: picking the same
-  // scenario twice would put the window somewhere the scenario never describes.
-  CShotRecorder::reset(*ctx);
-  // Nothing takes it back down again: seeing the state is half of why the writer clicked.
+  // The application came up for this scenario, so nothing is on top of it and the steps are simply
+  // performed. Nothing takes them down again either: seeing the state is why the writer asked.
   const int failures = CShotRecorder::replay(recorded.value(name).toArray(), *ctx);
-  refreshPanel(failures > 0
-                   ? tr("%1 cannot be set up here. See the log.").arg(name)
-                   : tr("The window is in %1. Point at what to photograph and press Ctrl+Shift+F9.").arg(name));
+  send("ready " + (failures > 0
+                       ? tr("%1 cannot be set up here. See the log.").arg(name)
+                       : tr("The window is in %1. Point at what to photograph and press Ctrl+Shift+F9.").arg(name)));
 }
 
 QString CShotDocMode::scenarioFor(const QString& id) const {
   // An entry with an empty scenario is a deliberate "as the application starts", not a gap, so the
   // entry decides whenever there is one.
   const QJsonObject& shot = shotOf(id);
-  return shot.isEmpty() ? selectedScenario : shot["scenario"].toString();
+  return shot.isEmpty() ? ownScenario : shot["scenario"].toString();
 }
 
 QString CShotDocMode::askForId() const {
@@ -520,23 +540,31 @@ QString CShotDocMode::askForId() const {
   missing.removeIf([&known](const QString& id) { return known.contains(id); });
   missing.sort();
 
-  // Whatever is selected in the panel comes first, whether it still needs a picture or is getting
-  // a new one. Retaking an existing name replaces that entry's image.
+  // What the writer has selected first, whether it still needs a picture or is getting a new one,
+  // then the ones the page asks for and the chapter has not got, then the rest. A picture that
+  // already exists has to be offered too: retaking one replaces its image, and that is most of
+  // what a writer does.
   QStringList choices;
-  const QString& selected = (nullptr == panel) ? QString() : panel->currentId();
-  if (!selected.isEmpty()) {
-    choices << selected;
+  if (referenced.contains(wantedShot)) {
+    choices << wantedShot;
   }
   for (const QString& id : std::as_const(missing)) {
-    if (id != selected) {
+    if (id != wantedShot) {
+      choices << id;
+    }
+  }
+  QStringList taken(referenced.begin(), referenced.end());
+  taken.sort();
+  for (const QString& id : std::as_const(taken)) {
+    if (!choices.contains(id)) {
       choices << id;
     }
   }
 
   if (choices.isEmpty()) {
     QMessageBox::information(ctx->parent(), tr("Take a picture"),
-                             tr("Your page asks for no picture that has not been taken. Put an "
-                                "image line where you want one, and its name appears here."));
+                             tr("Your page asks for no picture at all. Put an image line where you "
+                                "want one, and its name appears here."));
     return {};
   }
 
@@ -555,10 +583,6 @@ void CShotDocMode::tag() {
   if (nullptr == target) {
     return;
   }
-  if (nullptr != panel && (target == panel || panel->isAncestorOf(target))) {
-    // The writer clicked the cheat sheet. They mean the application behind it.
-    target = ctx->mainWindow();
-  }
 
   CMainWindow* main = ctx->mainWindow();
 
@@ -570,7 +594,7 @@ void CShotDocMode::tag() {
 
   // A window a scenario put here is photographed where it stands: the scenario opens it again, and
   // the shot records which window it expects so a scenario that stops opening it fails loudly.
-  const bool fromScenario = ownWindow && !selectedScenario.isEmpty();
+  const bool fromScenario = ownWindow && !ownScenario.isEmpty();
 
   QString exposure;
   if (ownWindow && !fromScenario) {
@@ -668,8 +692,8 @@ void CShotDocMode::tag() {
   }
 
   CShotChapter::store(chapterPath(), shot);
-  changedShots.remove(id);
-  refreshPanel(tr("Took %1.").arg(id) + driftWarning(scenario));
+  send("tagged " + id);
+  report(tr("Took %1.").arg(id) + driftWarning(scenario));
   qInfo().noquote() << QString::fromUtf8(QJsonDocument(shot).toJson(QJsonDocument::Compact));
 }
 
@@ -782,114 +806,6 @@ QString CShotDocMode::scenarioConfigPath(const QString& scenario) const {
   return dir.absoluteFilePath(scenario + ".ini");
 }
 
-namespace {
-/// @brief Content hash of a file, or an empty array when it does not exist
-QByteArray digest(const QString& path) {
-  QFile file(path);
-  if (!file.open(QIODevice::ReadOnly)) {
-    return {};
-  }
-  QCryptographicHash hash(QCryptographicHash::Md5);
-  hash.addData(&file);
-  return hash.result();
-}
-}  // namespace
-
-void CShotDocMode::retakeChapter() {
-  // What each picture looked like before, so the writer is told which ones the retake could not
-  // reproduce. A picture that changes without QMapShack changing depended on something the shot
-  // does not record - a mouse position, most often.
-  QHash<QString, QByteArray> before;
-  QFile file(chapterPath());
-  if (file.open(QIODevice::ReadOnly)) {
-    const QJsonArray& shots = QJsonDocument::fromJson(file.readAll()).object()["shots"].toArray();
-    for (const QJsonValue& value : shots) {
-      const QString& id = value.toObject()["id"].toString();
-      before.insert(id, digest(imagePath(id)));
-    }
-  }
-
-  // Nothing is put back first: every shot's scenario carries the arrangement it is taken in, so a
-  // retake starts from whatever the writer has moved to and still answers the build's question.
-  // The same call the headless run makes, in the application the writer is already looking at. It
-  // moves the selection and the map, because that is what the shots describe.
-  const int failures = CShotChapter::run(chapterPath(), *ctx);
-
-  changedShots.clear();
-  for (auto it = before.constBegin(); it != before.constEnd(); ++it) {
-    if (!it.value().isEmpty() && digest(imagePath(it.key())) != it.value()) {
-      changedShots << it.key();
-    }
-  }
-
-  QString status;
-  if (failures > 0) {
-    status += tr("%1 pictures could not be taken. See the log.").arg(failures);
-  } else if (changedShots.isEmpty()) {
-    status += tr("Every picture was taken again, all unchanged.");
-  } else {
-    status += tr("%1 of the pictures came out different. Look at them: what a retake cannot "
-                 "reproduce has to be taken by hand.")
-                  .arg(changedShots.size());
-  }
-  refreshPanel(status);
-}
-
-void CShotDocMode::reapUnused() {
-  const QSet<QString>& referenced = pageReferences();
-
-  QFile in(chapterPath());
-  if (!in.open(QIODevice::ReadOnly)) {
-    return;
-  }
-  QJsonObject chapter = QJsonDocument::fromJson(in.readAll()).object();
-  in.close();
-
-  QJsonArray keep;
-  QStringList dropped;
-  const QJsonArray& shots = chapter["shots"].toArray();
-  for (const QJsonValue& value : shots) {
-    const QString& id = value.toObject()["id"].toString();
-    if (referenced.contains(id)) {
-      keep.append(value);
-    } else {
-      dropped << id;
-    }
-  }
-
-  if (dropped.isEmpty()) {
-    refreshPanel(tr("Every picture is used by the page."));
-    return;
-  }
-
-  // It deletes image files, so it asks first.
-  if (QMessageBox::Yes != QMessageBox::question(ctx->parent(), tr("Remove unused pictures"),
-                                                tr("No page references these. Delete the pictures and their "
-                                                   "entries?\n\n%1")
-                                                    .arg(dropped.join("\n")),
-                                                QMessageBox::Yes | QMessageBox::No, QMessageBox::No)) {
-    return;
-  }
-
-  for (const QString& id : std::as_const(dropped)) {
-    QFile::remove(imagePath(id));
-  }
-
-  chapter["shots"] = keep;
-
-  // The scenarios are left alone. One with no picture is not waste - it is one the writer has not
-  // used yet - and throwing a recording away is the Delete button's job, which says what dies.
-  QFile out(chapterPath());
-  if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-    return;
-  }
-  out.write(QJsonDocument(chapter).toJson(QJsonDocument::Indented));
-  out.close();
-  syncScenarios();
-
-  refreshPanel(tr("Removed %1 unused.").arg(dropped.size()));
-}
-
 void CShotDocMode::takeRegion() {
   syncScenarios();
 
@@ -910,7 +826,7 @@ void CShotDocMode::takeRegion() {
   // window already shows.
   QString trouble;
   if (!scenario.isEmpty()) {
-    refreshPanel(tr("Setting %1 up...").arg(scenario));
+    report(tr("Setting %1 up...").arg(scenario));
     const QJsonArray& actions = CShotChapter::scenariosOf(chapterPath()).value(scenario).toArray();
     // Whatever could be built is on screen, even when part of it could not. Refusing here would
     // lock the writer out of the one place a broken scenario can be repaired.
@@ -922,7 +838,7 @@ void CShotDocMode::takeRegion() {
     CShotWriter::settle(main);
   }
 
-  refreshPanel(tr("Drag out the part you want. Escape cancels.") + trouble);
+  report(tr("Drag out the part you want. Escape cancels.") + trouble);
 
   QRect region;
   {
@@ -934,7 +850,7 @@ void CShotDocMode::takeRegion() {
 
   constexpr int kMinSide = 8;
   if (region.width() < kMinSide || region.height() < kMinSide) {
-    refreshPanel(tr("Nothing taken."));
+    report(tr("Nothing taken."));
     return;
   }
 
@@ -960,8 +876,8 @@ void CShotDocMode::takeRegion() {
   }
 
   CShotChapter::store(chapterPath(), shot);
-  changedShots.remove(id);
-  refreshPanel(tr("Took %1.").arg(id) + driftWarning(scenario));
+  send("tagged " + id);
+  report(tr("Took %1.").arg(id) + driftWarning(scenario));
 }
 
 void CShotDocMode::syncScenarios() { ctx->setScenarios(CShotChapter::scenariosOf(chapterPath())); }
@@ -981,158 +897,55 @@ QString CShotDocMode::suggestedScenarioName() const {
   return name;
 }
 
+void CShotDocMode::startRecording() {
+  recorder->start();
+  send("recording");
+  report(
+      tr("Recording from the base. Do what the scenario is - load, select, expand, zoom the "
+         "map, click an item on it - then press Stop."));
+}
+
 void CShotDocMode::toggleRecording() {
   if (!recorder->isRecording()) {
-    // The scenario the writer has selected is where the new one carries on from, so the common part
-    // does not have to be performed again. Copied into the recording, never referenced: a scenario
-    // stays self-contained, and deleting the one it started from cannot change it afterwards.
-    // Whatever the writer has selected; the base row carries nothing, which is the bare start.
-    const QJsonArray& carried = CShotChapter::scenariosOf(chapterPath()).value(selectedScenario).toArray();
-
-    CShotRecorder::reset(*ctx);
-    // The base carries no steps, so what puts the application into it is the state this process
-    // started in - otherwise a recording started from the base would inherit the arrangement and
-    // the view of whichever scenario was on screen before it, and take them whole at Stop.
-    CShotRecorder::replay(selectedScenario.isEmpty() ? baseState : carried, *ctx);
-    recorder->start(carried);
-
-    panel->setRecording(true);
-    refreshPanel(tr("Recording, carrying on from %1. Do what is still missing - load, select, "
-                    "expand, zoom the map, click an item on it - then press Stop.")
-                     .arg(selectedScenario.isEmpty() ? tr("the base") : selectedScenario) +
-                 driftWarning(selectedScenario));
+    // The supervisor only asks for this in a process it started in the base, so a recording is
+    // always a whole state and never a difference from another one that is not stored with it.
+    startRecording();
     return;
   }
 
-  const QJsonArray& actions = recorder->stop();
-  panel->setRecording(false);
-
-  if (actions.isEmpty()) {
-    refreshPanel(
+  pendingActions = recorder->stop();
+  if (pendingActions.isEmpty()) {
+    send("recorded-none");
+    report(
         tr("Nothing was recorded. What is kept is state - a selection, an expanded "
            "project, a control you changed, the map area, a click on an item. A button "
            "press that leaves no state behind is not one of them."));
     return;
   }
 
-  bool ok = false;
-  const QString& name =
-      QInputDialog::getText(ctx->parent(), tr("Record a scenario"), tr("What is this scenario called?"),
-                            QLineEdit::Normal, suggestedScenarioName(), &ok);
-  if (!ok || name.isEmpty()) {
-    refreshPanel(tr("Recording thrown away."));
+  // The name is the supervisor's to ask for: its window is the one the writer pressed Stop on.
+  send("recorded-pending " + suggestedScenarioName());
+}
+
+void CShotDocMode::storeRecording(const QString& name) {
+  if (pendingActions.isEmpty()) {
     return;
   }
+  const QJsonArray actions = pendingActions;
+  pendingActions = QJsonArray();
 
-  if (CShotChapter::kBaseScenario == name) {
-    refreshPanel(tr("%1 is what the pictures taken in no scenario at all are called. Pick another "
-                    "name; the recording is still here.")
-                     .arg(name));
+  if (name.isEmpty()) {
     return;
   }
 
   CShotChapter::storeScenario(chapterPath(), name, actions);
   storeScenarioConfig(name);
   syncScenarios();
-  selectedScenario = name;
-  refreshPanel(tr("Scenario %1 recorded, %2 steps. Give a picture that scenario in its row, then "
-                  "point at what to photograph and press Ctrl+Shift+F9.")
-                   .arg(name)
-                   .arg(actions.size()));
   qInfo().noquote() << name << QString::fromUtf8(QJsonDocument(actions).toJson(QJsonDocument::Compact));
-}
 
-void CShotDocMode::renameScenario() {
-  if (selectedScenario.isEmpty()) {
-    refreshPanel(tr("Select a scenario first."));
-    return;
-  }
-
-  bool ok = false;
-  const QString& to = QInputDialog::getText(ctx->parent(), tr("Rename scenario"), tr("New name:"), QLineEdit::Normal,
-                                            selectedScenario, &ok);
-  if (!ok || to.isEmpty() || to == selectedScenario) {
-    return;
-  }
-  if (CShotChapter::kBaseScenario == to) {
-    refreshPanel(tr("%1 is what the pictures taken in no scenario at all are called.").arg(to));
-    return;
-  }
-
-  // A rename says nothing about the state, so no picture is invalidated by it.
-  if (!CShotChapter::renameScenario(chapterPath(), selectedScenario, to)) {
-    refreshPanel(tr("There is a scenario called %1 already.").arg(to));
-    return;
-  }
-
-  selectedScenario = to;
-  syncScenarios();
-  refreshPanel(tr("Renamed to %1. Every picture taken in it kept its image.").arg(to));
-}
-
-void CShotDocMode::deleteScenario() {
-  if (selectedScenario.isEmpty()) {
-    refreshPanel(tr("Select a scenario first."));
-    return;
-  }
-
-  const QString& name = selectedScenario;
-  const QStringList& affected = CShotChapter::shotsUsing(chapterPath(), name);
-
-  const QString& question = affected.isEmpty()
-                                ? tr("Delete the scenario %1?").arg(name)
-                                : tr("Delete the scenario %1?\n\nThese pictures are taken in it. A widget and a "
-                                     "rectangle frame something else in another state, so they lose their image and "
-                                     "everything that said how they were taken, and have to be done again from "
-                                     "scratch:\n\n%2")
-                                      .arg(name, affected.join("\n"));
-  if (QMessageBox::Yes != QMessageBox::question(ctx->parent(), tr("Delete scenario"), question,
-                                                QMessageBox::Yes | QMessageBox::No, QMessageBox::No)) {
-    return;
-  }
-
-  for (const QString& id : affected) {
-    QFile::remove(imagePath(id));
-    changedShots.remove(id);
-  }
-  CShotChapter::deleteScenario(chapterPath(), name);
-
-  selectedScenario.clear();
-  syncScenarios();
-  refreshPanel(affected.isEmpty()
-                   ? tr("%1 deleted.").arg(name)
-                   : tr("%1 deleted. %2 pictures have to be done again.").arg(name).arg(affected.size()));
-}
-
-void CShotDocMode::rebindShot(const QString& id, const QString& scenario) {
-  const QJsonObject& shot = shotOf(id);
-  const QString& was = shot["scenario"].toString();
-  if (was == scenario) {
-    return;
-  }
-
-  // Only when there is something to lose: a picture that was never taken has nothing to warn about.
-  const bool defined = shot.contains("widget") || shot.contains("exposure") || shot.contains("rect");
-  if (defined &&
-      QMessageBox::Yes != QMessageBox::question(ctx->parent(), tr("Take it in another scenario"),
-                                                tr("%1 is taken in %2. A widget and a rectangle frame something else "
-                                                   "in another state, so the picture and everything that said how it "
-                                                   "was taken are thrown away and it has to be done again from "
-                                                   "scratch.\n\nGo on?")
-                                                    .arg(id, was),
-                                                QMessageBox::Yes | QMessageBox::No, QMessageBox::No)) {
-    // The refresh puts the row's combo box back the way the chapter file has it.
-    refreshPanel(tr("%1 is still taken in %2.").arg(id, was));
-    return;
-  }
-
-  QFile::remove(imagePath(id));
-  CShotChapter::rebindShot(chapterPath(), id, scenario);
-  changedShots.remove(id);
-  syncScenarios();
-  refreshPanel(scenario.isEmpty()
-                   ? tr("%1 has no scenario now and cannot be taken.").arg(id)
-                   : tr("%1 is taken in %2 now. Point at what it shows and press Ctrl+Shift+F9.").arg(id, scenario));
+  // The supervisor answers this by starting a process in the scenario: what was recorded is only a
+  // state once something comes up in it.
+  send("recorded " + name);
 }
 
 int CShotDocMode::storeScenarioConfig(const QString& scenario) {
@@ -1144,7 +957,7 @@ int CShotDocMode::storeScenarioConfig(const QString& scenario) {
   if (nullptr != main) {
     cfg.beginGroup("MainWindow");
     cfg.setValue("state", main->saveState());
-    cfg.setValue("geometry", main->saveGeometry());
+    cfg.setValue("geometry", portableGeometry(main->saveGeometry()));
     cfg.endGroup();
   }
   cfg.sync();
@@ -1186,15 +999,7 @@ QString CShotDocMode::driftWarning(const QString& scenario) const {
 }
 
 void CShotDocMode::storeBaseConfig() {
-  if (QMessageBox::Yes != QMessageBox::question(ctx->parent(), tr("Store as base"),
-                                                tr("The base is what a chapter opens on, and what a scenario recorded "
-                                                   "from here on copies its settings from. Scenarios that already have "
-                                                   "their own keep it, so no picture already taken moves.\n\nStore the "
-                                                   "arrangement, the paths and the settings you have now as the base?"),
-                                                QMessageBox::Yes | QMessageBox::No, QMessageBox::No)) {
-    return;
-  }
-
+  // Asked about by the supervisor, on the window the button is on.
   SETTINGS;
 
   // CMainWindow writes these in its destructor, which has not run yet, and the arrangement is half
@@ -1203,7 +1008,7 @@ void CShotDocMode::storeBaseConfig() {
   if (nullptr != main) {
     cfg.beginGroup("MainWindow");
     cfg.setValue("state", main->saveState());
-    cfg.setValue("geometry", main->saveGeometry());
+    cfg.setValue("geometry", portableGeometry(main->saveGeometry()));
     cfg.endGroup();
   }
   cfg.sync();
@@ -1228,11 +1033,11 @@ void CShotDocMode::storeBaseConfig() {
   }
   base.sync();
 
-  refreshPanel(tr("%1 settings are the base now; %2 that name a place on this machine were left "
-                  "out. It is what a chapter opens on and what a scenario recorded from here on "
-                  "copies. The scenarios you already have keep their own, so no picture moved.")
-                   .arg(stored)
-                   .arg(dropped));
+  report(tr("%1 settings are the base now; %2 that name a place on this machine were left "
+            "out. It is what a chapter opens on and what a scenario recorded from here on "
+            "copies. The scenarios you already have keep their own, so no picture moved.")
+             .arg(stored)
+             .arg(dropped));
 }
 
 int CShotDocMode::settingsDrift(const QString& scenario) const {
@@ -1263,16 +1068,25 @@ int CShotDocMode::settingsDrift(const QString& scenario) const {
   return drifted;
 }
 
-void CShotDocMode::updateScenario() {
+void CShotDocMode::updateScenario(const QString& target) {
+  // Named by the supervisor and checked here: the settings about to be stored are this process's
+  // own, so storing them anywhere but its own state would describe a state nobody was looking at.
+  const QString& named = (CShotChapter::kBaseScenario == target) ? QString() : target;
+  if (named != ownScenario) {
+    report(tr("This window is %1, not %2 - nothing was stored.")
+               .arg(ownScenario.isEmpty() ? tr("the base") : ownScenario, named.isEmpty() ? tr("the base") : named));
+    return;
+  }
+
   // The base row: what a chapter opens on and what the next recording copies.
-  if (selectedScenario.isEmpty()) {
+  if (ownScenario.isEmpty()) {
     storeBaseConfig();
     return;
   }
 
   // The arrangement and the map are actions of the scenario: they decide how big a picture comes
   // out and what it looks at.
-  QJsonArray actions = CShotChapter::scenariosOf(chapterPath()).value(selectedScenario).toArray();
+  QJsonArray actions = CShotChapter::scenariosOf(chapterPath()).value(ownScenario).toArray();
   // Replaced in place, or the scenario would grow an arrangement every time this is pressed.
   for (qsizetype i = actions.size() - 1; i >= 0; i--) {
     const QString& what = actions.at(i).toObject()["do"].toString();
@@ -1282,12 +1096,12 @@ void CShotDocMode::updateScenario() {
   }
   actions.prepend(CShotRecorder::viewOf(*ctx));
   actions.prepend(CShotRecorder::layoutOf(*ctx));
-  CShotChapter::storeScenario(chapterPath(), selectedScenario, actions);
+  CShotChapter::storeScenario(chapterPath(), ownScenario, actions);
   syncScenarios();
 
   // The settings are the scenario's own file: they are read in constructors, so they can only take
   // effect in a process started with them.
-  const int stored = storeScenarioConfig(selectedScenario);
+  const int stored = storeScenarioConfig(ownScenario);
 
-  refreshPanel(tr("%1 now has this arrangement, this map and these %2 settings.").arg(selectedScenario).arg(stored));
+  report(tr("%1 now has this arrangement, this map and these %2 settings.").arg(ownScenario).arg(stored));
 }

@@ -41,12 +41,17 @@ class CAppOpts {
   const QString shootOnly;      // --only, the single shot id to take
   const QString docDir;         // --doc, the checkout documentation mode writes into
   const QString docChapter;     // --doc-chapter, which chapter F9 appends to
+  const QString docScenario;    // --doc-scenario, the state to come up in; non-empty is the child
+  const QString docChannel;     // --doc-channel, where the state process reports back to
+  const QString docPython;      // --doc-python, the interpreter shots.py runs under
+  const QString docScreen;      // --doc-screen, the screen the panel is on
   const QStringList arguments;
 
   CAppOpts(bool noSplash, bool doDebug, bool doLogfile, const QString& config, const QString& locale,
            const QString& fontFamily, const QString& fontSize, const QString& colorScheme, const QString& shootDir,
            const QString& shootTask, const QString& shootTarget, const QString& shootScenario, const QString& shootOnly,
-           const QString& docDir, const QString& docChapter, const QStringList& args)
+           const QString& docDir, const QString& docChapter, const QString& docScenario, const QString& docChannel,
+           const QString& docPython, const QString& docScreen, const QStringList& args)
       : nosplash(noSplash),
         debug(doDebug),
         logfile(doLogfile),
@@ -62,6 +67,10 @@ class CAppOpts {
         shootOnly(shootOnly),
         docDir(docDir),
         docChapter(docChapter),
+        docScenario(docScenario),
+        docChannel(docChannel),
+        docPython(docPython),
+        docScreen(docScreen),
         arguments(args) {}
 };
 

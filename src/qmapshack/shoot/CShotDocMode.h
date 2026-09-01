@@ -30,8 +30,8 @@
 
 class CMainWindow;
 class CShotContext;
-class CShotDocPanel;
 class CShotWriter;
+class QLocalSocket;
 class QWidget;
 
 /**
@@ -45,12 +45,13 @@ class QWidget;
 class CShotDocMode : public QObject {
   Q_OBJECT
  public:
-  /// @param repo     the checkout to write images and chapter files into
-  /// @param chapter  which chapter file F9 appends to
-  CShotDocMode(const QDir& repo, const QString& chapter, QObject* parent);
+  /// @param repo      the checkout to write images and chapter files into
+  /// @param chapter   which chapter file F9 appends to
+  /// @param scenario  the state to come up in; `CShotChapter::kBaseScenario` for the base
+  CShotDocMode(const QDir& repo, const QString& chapter, const QString& scenario, QObject* parent);
   virtual ~CShotDocMode();
 
-  /// @brief Queue the fixture build; the main window defers part of its own initialization
+  /// @brief Connect back to the launcher and queue the fixture build
   void start();
 
  protected:
@@ -58,6 +59,19 @@ class CShotDocMode : public QObject {
 
  private slots:
   void slotBuildFixture();
+
+  /// @brief Put the application on the screen the panel is on, keeping its size
+  void moveToWritersScreen();
+
+ private:
+  /// @brief Do what the launcher asked for: `region`, `update`, `record`, `stop`, `sync`
+  void obey(const QString& line);
+
+  /// @brief One line back to the launcher; logged instead when there is none
+  void send(const QString& line);
+
+  /// @brief Tell the launcher what to put in the panel's status line
+  void report(const QString& status);
 
  private:
   /// @brief The window the writer means: the modal one, else the active one, else the focused one
@@ -152,13 +166,7 @@ class CShotDocMode : public QObject {
      three belong to the state it is taken in. With the base row selected they become the base,
      which is asked about first.
    */
-  void updateScenario();
-
-  /// @brief Take every picture of this chapter again, here, in the running application
-  void retakeChapter();
-
-  /// @brief Re-read the chapter file and show its shots in the panel
-  void refreshPanel(const QString& status = QString());
+  void updateScenario(const QString& target);
 
   /**
      @brief Record what the writer performs, and on the second press store it as a scenario.
@@ -176,28 +184,17 @@ class CShotDocMode : public QObject {
   /// @return A name for the recording that this chapter does not use yet
   QString suggestedScenarioName() const;
 
-  /**
-     @brief Put the application into a scenario and leave it there.
+  /// @brief Perform a scenario in an application that has just come up in it, with nothing on top
+  void setUpScenario(const QString& name);
 
-     An empty name is the base (section 7): not a recording, so there is nothing to look up - what
-     a replayed scenario left on screen is taken back down and the state the process started in is
-     put back.
-   */
-  void showScenario(const QString& name);
+  /// @brief Begin recording. Always from the base, so what is stored is the scenario's whole state
+  void startRecording();
 
-  /// @brief Give the selected scenario another name; no picture is lost by it
-  void renameScenario();
+  /// @brief Store what was recorded under this name; the supervisor is what asked for it
+  void storeRecording(const QString& name);
 
-  /**
-     @brief Throw the selected scenario away, after saying what dies with it.
-
-     A widget address and a rectangle frame something else in another state, so every picture taken
-     in it loses its image and everything that said how it was taken, and is done from scratch.
-   */
-  void deleteScenario();
-
-  /// @brief Take a picture in another scenario, which throws the old one away - see deleteScenario
-  void rebindShot(const QString& id, const QString& scenario);
+  /// What a stopped recording produced, until the supervisor comes back with a name for it
+  QJsonArray pendingActions;
 
   /**
      @brief Which state a picture is taken in.
@@ -220,24 +217,13 @@ class CShotDocMode : public QObject {
   /// @return The chapter's entry for this id, empty when it has none
   QJsonObject shotOf(const QString& id) const;
 
-  /**
-     @brief Put the window back the way the picture the writer clicked was taken.
-
-     It is left standing afterwards: seeing the state is half of why the writer clicked, taking a
-     region of it is the other half.
-   */
-  void showShot(const QString& id);
-
-  /// @brief Delete every picture of this chapter that no page references
-  void reapUnused();
-
-  /// Ids whose image the last retake changed; cleared by the next tag
-  QSet<QString> changedShots;
-
   QString chapter;
 
-  /// The scenario the writer has selected; a picture with none of its own is taken in it
-  QString selectedScenario;
+  /// What this process was started in; empty is the base. It is the whole of what it is for.
+  QString ownScenario;
+
+  /// The picture the writer has selected in the panel, which F9 offers first - taken or not
+  QString wantedShot;
 
   /**
      The base as this process started in it: the arrangement and the view, taken once the fixture
@@ -249,10 +235,10 @@ class CShotDocMode : public QObject {
   QJsonArray baseState;
 
   QDir repo;
-  CShotDocPanel* panel = nullptr;
   CShotWriter* writer = nullptr;
   CShotContext* ctx = nullptr;
   class CShotRecorder* recorder = nullptr;
+  QLocalSocket* channel = nullptr;
   /// Guards against re-entering tag() from the dialogs tag() itself opens
   bool tagging = false;
 };

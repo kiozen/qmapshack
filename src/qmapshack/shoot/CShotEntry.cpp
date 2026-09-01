@@ -21,13 +21,16 @@
 #include <QApplication>
 #include <QDir>
 #include <QFileInfo>
+#include <QIcon>
 
 #include "CMainWindow.h"
-#include "map/CMapDraw.h"
 #include "gis/CGisListWks.h"
+#include "map/CMapDraw.h"
 #include "setup/CAppOpts.h"
+#include "shoot/CShotDocLauncher.h"
 #include "shoot/CShotDocMode.h"
 #include "shoot/CShotRunner.h"
+#include "theme/CQmsStyle.h"
 
 namespace {
 /// @brief A workspace database of its own, so a run never reads or writes the user's open projects
@@ -39,7 +42,21 @@ QString scratchWorkspace(const QString& dir, const QString& name) {
 
 bool CShotEntry::isDocRun(const CAppOpts& opts) { return !opts.shootDir.isEmpty() || !opts.docDir.isEmpty(); }
 
+bool CShotEntry::showsMainWindow(const CAppOpts& opts) {
+  // The launcher needs a CMainWindow - it is what initialises the singletons the panel's data goes
+  // through - but showing it would put an application window in front of the writer that no
+  // scenario describes.
+  return opts.docDir.isEmpty() || !opts.docScenario.isEmpty();
+}
+
 void CShotEntry::prepare(const CAppOpts& opts) {
+  // A picture must not depend on whether it was taken on screen or off it, and the platform theme
+  // is the difference: the offscreen platform has none, a desktop always has one. Both runs are
+  // pinned here, so the writer's session and the build that replays it answer the same.
+  CQmsStyle::pinThemeIndependentHints();
+  QIcon::setThemeName(QString());
+  QIcon::setFallbackThemeName(QString());
+
   if (!opts.shootDir.isEmpty()) {
     const QString& cache = QDir(opts.shootDir).absoluteFilePath("_cache");
     CMapDraw::setCacheRoot(cache);
@@ -68,8 +85,14 @@ std::optional<int> CShotEntry::run(const CAppOpts& opts, CMainWindow& window) {
   }
 
   if (!opts.docDir.isEmpty()) {
-    CShotDocMode* doc = new CShotDocMode(QDir(opts.docDir), opts.docChapter, &window);
-    doc->start();
+    // Two processes: the one the writer works in is the one that was given a state.
+    if (opts.docScenario.isEmpty()) {
+      CShotDocLauncher* launcher = new CShotDocLauncher(QDir(opts.docDir), opts.docChapter, &window);
+      launcher->start();
+    } else {
+      CShotDocMode* doc = new CShotDocMode(QDir(opts.docDir), opts.docChapter, opts.docScenario, &window);
+      doc->start();
+    }
   }
   return std::nullopt;
 }

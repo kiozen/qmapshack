@@ -44,6 +44,8 @@ int main(int argc, char** argv) {
     argVal[i] = argv[i];
   }
 
+  IAppSetup::attachParentConsole(argc, argv);
+
   QApplication app(argc, argv);
   CQmsStyle::install();
   CUiTheme::installThemeRefresh();
@@ -115,7 +117,9 @@ int main(int argc, char** argv) {
   }
 
   CMainWindow w;
-  w.show();
+  if (CShotEntry::showsMainWindow(*qlOpts)) {
+    w.show();
+  }
 
   if (const std::optional<int>& code = CShotEntry::run(*qlOpts, w); code.has_value()) {
     return code.value();

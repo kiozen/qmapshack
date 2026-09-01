@@ -22,10 +22,11 @@
 #include <QApplication>
 #include <QtCore>
 
-
 class IAppSetup {
  public:
   static IAppSetup* getPlatformInstance();
+  /// Take over the console the run was started from, before anything can fail without saying so.
+  static void attachParentConsole(int argc, char** argv);
   virtual void initQMapShack() = 0;
   void initLogHandler();
   void processArguments();
@@ -40,7 +41,8 @@ class IAppSetup {
 
  protected:
   void prepareGdal(QString gdalDataDir, QString gdalPluginsDir, QString projDataDir);
-  void prepareTranslator(QString translationPath, QString translationPrefix);
+  /// @return true when a catalog for the locale was found and installed
+  bool prepareTranslator(QString translationPath, QString translationPrefix);
 
   static IAppSetup* instance;
 

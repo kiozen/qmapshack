@@ -42,16 +42,11 @@ COLOR_SCHEME = "light"
 # German dialog buttons and dates. The language loop of the plan varies this.
 LOCALE = "en"
 SYSTEM_LOCALE = "en_US.UTF-8"
-# The screen a headless run pretends to have. The offscreen platform defaults to 800x600, and
-# QWidget::restoreGeometry() clamps to the screen - a chapter's stored window would silently come
-# out smaller than the writer arranged it. Pinned, so it is the same on every machine.
-SCREEN = {"name": "shots", "x": 0, "y": 0, "width": 1920, "height": 1200,
-          "logicalDpi": 96, "logicalBaseDpi": 96, "dpr": 1}
-# Named relative to the working directory, which `run()` points at the scratch directory. Qt splits
-# the platform string on ':', so a Windows absolute path cuts `configfile=C:\...` into
-# `configfile=C` plus a second argument - and a config file the plugin cannot open is a qFatal,
-# which is the 3221226505 a Windows run exits with.
-SCREEN_FILE = "screen.json"
+# The desktop's platform theme answers QPlatformTheme::standardButtonText() out of its own
+# translations, so a KDE session puts "Abbrechen" on a dialog whatever --locale says, and adds the
+# mnemonics ("&OK") the generic theme leaves off. The offscreen platform loads no theme at all, so
+# without this pin the writer's session and the headless build disagree on every standard button.
+PLATFORM_THEME = "generic"
 
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_OUT = REPO / "doc" / "images"
@@ -69,6 +64,27 @@ DEM_DIR = FIXTURE_DIR / "dem"
 POI_DIR = FIXTURE_DIR / "poi"
 SHOTS_DIR = REPO / "doc" / "shots"
 PAGES_DIR = REPO / "doc" / "pages"
+
+
+def pinned_env():
+    """The environment a run is pinned to, whichever of the two it is."""
+    env = dict(os.environ)
+    # Qt's whole scaling family, not one of it: each of these changes what a picture comes out as
+    # without changing its size, so a writer on a HiDPI desktop otherwise produced images that
+    # differ from everyone else's for no reason anyone could see in them.
+    for scaling in ("QT_SCALE_FACTOR", "QT_SCALE_FACTOR_ROUNDING_POLICY", "QT_SCREEN_SCALE_FACTORS",
+                    "QT_FONT_DPI", "QT_ENABLE_HIGHDPI_SCALING", "QT_USE_PHYSICAL_DPI",
+                    "QT_DEVICE_PIXEL_RATIO"):
+        env.pop(scaling, None)
+    # Unix only: `generic` is a theme Qt builds for the unix desktops and for no other platform,
+    # and the desktop theme the pin keeps out is a unix one in the first place. A Windows run
+    # started with it ends in an access violation inside the QApplication constructor, before
+    # anything it could report with exists.
+    if sys.platform not in ("win32", "darwin"):
+        env["QT_QPA_PLATFORMTHEME"] = PLATFORM_THEME
+    env["TZ"] = "UTC"
+    env["LC_ALL"] = env["LANG"] = env["LANGUAGE"] = SYSTEM_LOCALE
+    return env
 
 
 def read_ini(path):
@@ -115,7 +131,7 @@ def scenario_ini(chapter, scenario):
     return SHOTS_DIR / chapter / f"{scenario}.ini"
 
 
-def compose_config(scratch, chapter=None, scenario=None):
+def compose_config(scratch, chapter=None, scenario=None, out=None):
     """The scenario's own configuration, or the base when it has none yet.
 
     Not one merged over the other: a scenario stores a whole configuration, so that changing the
@@ -143,7 +159,7 @@ def compose_config(scratch, chapter=None, scenario=None):
         data["Canvas/demPaths"] = str(DEM_DIR)
     if POI_DIR.is_dir():
         data["Canvas/poiPaths"] = str(POI_DIR)
-    config = Path(scratch) / "shots.ini"
+    config = Path(out) if out else Path(scratch) / "shots.ini"
     write_ini(config, data)
     return config
 
@@ -161,6 +177,32 @@ def load_chapter(name):
     return path, json.loads(path.read_text())
 
 
+def has_doc_mode(binary):
+    """Was this build configured with the documentation subsystem?
+
+    Without -DQMS_DOC_MODE=ON the options below do not exist at all, and the application answers
+    with `Unknown option 'doc'`, which says nothing about what is actually missing.
+    """
+    env = dict(os.environ)
+    env["QT_QPA_PLATFORM"] = "offscreen"
+    try:
+        help_text = subprocess.run([str(binary), "--help"], env=env, capture_output=True, text=True,
+                                   timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return True  # not our business to diagnose; let the real run report it
+    return "--doc" in (help_text.stdout + help_text.stderr)
+
+
+def checked(binary):
+    """The binary, or a message saying which build flag is missing."""
+    if not has_doc_mode(binary):
+        sys.exit(f"{binary} has no documentation mode.\n"
+                 f"Configure the build with -DQMS_DOC_MODE=ON and build it again:\n"
+                 f"  cmake -S . -B build -DQMS_DOC_MODE=ON\n"
+                 f"  cmake --build build --target qmapshack")
+    return binary
+
+
 def find_binary(explicit):
     if explicit:
         path = Path(explicit)
@@ -168,25 +210,15 @@ def find_binary(explicit):
             sys.exit(f"no such binary: {path}")
         # Absolute: a shoot run works in a scratch directory of its own, so a relative `.\qmapshack.exe`
         # would not resolve there.
-        return path.resolve()
+        return checked(path.resolve())
 
     # This checkout's own build, never an installed QMapShack: the pictures have to show the code
     # the pages are written against, and PATH says nothing about which that is.
     for candidate in (REPO / "build" / "bin" / "qmapshack", REPO / "build" / "bin" / "qmapshack.exe"):
         if candidate.is_file():
-            return candidate.resolve()
+            return checked(candidate.resolve())
 
     sys.exit(f"no QMapShack in {REPO / 'build' / 'bin'}; build this checkout, or pass --binary")
-
-
-def screen_config(scratch):
-    """The offscreen platform argument that gives the run a screen of its own.
-
-    The file is named relative to the working directory - see SCREEN_FILE for why it cannot be the
-    absolute path it sits at.
-    """
-    (Path(scratch) / SCREEN_FILE).write_text(json.dumps({"screens": [SCREEN]}))
-    return f"offscreen:configfile={SCREEN_FILE}"
 
 
 def run(binary, out_dir, task, target=None, only=None, verbose=False, chapter=None, scenario=None,
@@ -203,10 +235,12 @@ def run(binary, out_dir, task, target=None, only=None, verbose=False, chapter=No
     with tempfile.TemporaryDirectory(prefix="qms-shots-") as scratch:
         config = compose_config(scratch, chapter, scenario if config_of is NOT_GIVEN else config_of)
 
-        platform = screen_config(scratch)
         cmd = [
             str(binary),
-            "-platform", platform,
+            # Plain, with nothing after it: the offscreen plugin's `configfile=` parameter is not
+            # accepted everywhere - a Windows run does not start with it - and a run pins every
+            # window's size itself, so a screen of its own bought nothing.
+            "-platform", "offscreen",
             "-style", STYLE,
             "--no-splash",
             "--config", str(config),
@@ -224,18 +258,13 @@ def run(binary, out_dir, task, target=None, only=None, verbose=False, chapter=No
         if only:
             cmd += ["--only", only]
 
-        env = dict(os.environ)
-        # QT_SCALE_FACTOR in the environment would silently double every image.
-        env.pop("QT_SCALE_FACTOR", None)
-        env.pop("QT_SCALE_FACTOR_ROUNDING_POLICY", None)
-        env["QT_QPA_PLATFORM"] = platform
-        env["TZ"] = "UTC"
-        env["LC_ALL"] = env["LANG"] = SYSTEM_LOCALE
+        env = pinned_env()
+        env["QT_QPA_PLATFORM"] = "offscreen"
 
         if verbose:
             print(" ".join(cmd), file=sys.stderr)
 
-        # In the scratch directory, so the platform argument can name the screen file relatively.
+        # In the scratch directory: the run writes its own leftovers there and nowhere else.
         result = subprocess.run(cmd, env=env, cwd=scratch, capture_output=not verbose, text=True)
         if result.returncode != 0:
             if not verbose and result.stderr:
@@ -252,7 +281,7 @@ def run(binary, out_dir, task, target=None, only=None, verbose=False, chapter=No
 
 
 def cmd_doc(args):
-    """Run the application interactively so a writer can tag shots with F9."""
+    """Run the launcher: the panel, and the state processes it starts."""
     args.chapter = chapter_name(args.chapter)
     binary = find_binary(args.binary)
 
@@ -262,7 +291,9 @@ def cmd_doc(args):
         print("         Write the page first; its image lines are what tells you which")
         print("         pictures to take.")
     with tempfile.TemporaryDirectory(prefix="qms-doc-") as scratch:
-        # The base: a session opens on it, and every scenario is recorded starting from it.
+        # The launcher shows no application window of its own, so this configuration only has to
+        # keep it out of the user's settings. What a state process runs with is composed per
+        # scenario, by the launcher, through `compose` below.
         config = compose_config(scratch, args.chapter)
 
         cmd = [
@@ -276,17 +307,41 @@ def cmd_doc(args):
             "--locale", LOCALE,
             "--doc", str(REPO),
             "--doc-chapter", args.chapter,
+            # The launcher runs `compose` below before it starts a state process. It must do that
+            # with this interpreter: searching PATH for `python3` finds the store's app execution
+            # alias on Windows, which opens the Microsoft Store and writes nothing.
+            "--doc-python", sys.executable,
         ]
-        env = dict(os.environ)
         # Same pins as a build, or what the writer accepts is not what the build reproduces.
-        env.pop("QT_SCALE_FACTOR", None)
-        env.pop("QT_SCALE_FACTOR_ROUNDING_POLICY", None)
-        env["TZ"] = "UTC"
-        env["LC_ALL"] = env["LANG"] = SYSTEM_LOCALE
+        env = pinned_env()
+
+        if args.verbose:
+            # The application's own trace: a session that dies before it shows a window has
+            # nothing else to say where it got to.
+            cmd.append("--debug")
+            print(" ".join(cmd), file=sys.stderr)
 
         print(f"Documentation mode, chapter \"{args.chapter}\".")
         print("Ctrl+Shift+F9 takes a picture of what you point at. The panel does the rest.")
-        subprocess.run(cmd, env=env)
+        result = subprocess.run(cmd, env=env)
+        # A Windows release build dies without a word - no console, no box - so a session that ends
+        # before it shows anything is only visible here. 3221225477 is an access violation,
+        # 3221225781 a DLL that could not be loaded.
+        if result.returncode != 0:
+            sys.exit(f"the session ended with {result.returncode}")
+
+
+def cmd_compose(args):
+    """One scenario's whole configuration, for whoever is about to start a process in it.
+
+    The launcher runs this before it starts a state process, and `run()` uses the same
+    compose_config() below, so the writer's session and the build cannot drift apart.
+    """
+    args.chapter = chapter_name(args.chapter)
+    scenario = None if args.scenario in (None, "", BASE_SCENARIO) else args.scenario
+    out = Path(args.out).resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    print(compose_config(str(out.parent), args.chapter, scenario, out=out))
 
 
 def shoot_chapter(binary, out, path, name, verbose):
@@ -449,6 +504,12 @@ def main():
     doc = sub.add_parser("doc", help="run interactively and tag shots with F9")
     doc.add_argument("chapter", nargs="?", default="scratch")
     doc.set_defaults(func=cmd_doc)
+
+    compose = sub.add_parser("compose", help="write one scenario's whole configuration")
+    compose.add_argument("chapter")
+    compose.add_argument("--scenario", help="the scenario; the base when left out")
+    compose.add_argument("--out", required=True, metavar="FILE")
+    compose.set_defaults(func=cmd_compose)
 
     chapter = sub.add_parser("chapter", help="shoot one chapter file")
     chapter.add_argument("name", nargs="?", default="scratch")
