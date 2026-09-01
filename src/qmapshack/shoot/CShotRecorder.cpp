@@ -1244,6 +1244,10 @@ void CShotRecorder::reset(CShotContext& ctx) {
     }
   }
 
+  // setCurrentItem() below emits nothing, so the hint the workspace put on the canvas when an item
+  // was selected outlives it.
+  CGisWorkspace::self().slotWksItemSelectionReset();
+
   CGisListWks* list = ctx.wksList();
   if (nullptr == list) {
     return;
@@ -1262,6 +1266,10 @@ void CShotRecorder::clear(const QJsonArray& actions, CShotContext& ctx) {
   if (CMouseNormal* mouse = canvas->findChild<CMouseNormal*>(); nullptr != mouse) {
     mouse->clearScreenOption();
   }
+
+  // Selecting a workspace item puts a hint on every canvas telling the user to click the map. It is
+  // the selection's leftover, not the next picture's.
+  CGisWorkspace::self().slotWksItemSelectionReset();
 
   // Opening an item's options gives a track a click focus, which changes the way it draws. The
   // next picture of the chapter has to start from the same place this one did.

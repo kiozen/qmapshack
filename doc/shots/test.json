@@ -47,10 +47,6 @@
                 "item": "Shoot Demo"
             },
             {
-                "do": "select",
-                "item": "Shoot Demo/trk:Demo Track"
-            },
-            {
                 "do": "click",
                 "item": "Shoot Demo/trk:Demo Track",
                 "lat": 47.51000367803942,
