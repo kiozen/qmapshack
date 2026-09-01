@@ -37,6 +37,9 @@ namespace CShotEntry {
 /// @return true when the options ask for a shoot or a documentation run
 bool isDocRun(const CAppOpts& opts);
 
+/// @return false for the run that only shows the panel: its main window is a fixture, not a window
+bool showsMainWindow(const CAppOpts& opts);
+
 /**
    @brief Point the tile cache and the workspace database somewhere harmless.
 
@@ -52,6 +55,7 @@ std::optional<int> run(const CAppOpts& opts, CMainWindow& window);
 #else
 
 inline bool isDocRun(const CAppOpts&) { return false; }
+inline bool showsMainWindow(const CAppOpts&) { return true; }
 inline void prepare(const CAppOpts&) {}
 inline std::optional<int> run(const CAppOpts&, CMainWindow&) { return std::nullopt; }
 

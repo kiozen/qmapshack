@@ -44,6 +44,11 @@ class QTreeWidgetItem;
 class CShotDocPanel : public QDialog {
   Q_OBJECT
  public:
+  /// What a picture's combo box and the first row of the scenario list call the application as the
+  /// configuration starts it. It is not a scenario: nothing stores it, and a shot taken in it simply
+  /// has no scenario of its own.
+  static inline const QString kBaseRow = QStringLiteral("(base)");
+
   /// What a picture's row says about it. Compared, never displayed - the label is translated.
   enum state_e {
     eTaken,    ///< the image exists and the page uses it
@@ -80,6 +85,10 @@ class CShotDocPanel : public QDialog {
   /// @return The id of the selected picture, or an empty string
   QString currentId() const;
 
+  /// @brief Select the picture with this id, which shows its image. Nothing if the chapter has no
+  ///        such row. Call after setShots(): it is the rows that are searched.
+  void setCurrentShot(const QString& id);
+
   // --- what the panel asks documentation mode to do ------------------------------------------
 
   /// @brief A picture row was clicked; put the state it was taken in back on screen
@@ -103,6 +112,10 @@ class CShotDocPanel : public QDialog {
   void setReapHandler(std::function<void()> handler) { reap = handler; }
 
   void setRetakeHandler(std::function<void()> handler) { retake = handler; }
+
+  /// @brief Called when the writer closes the panel: it is the supervisor's window, so it ends the
+  ///        session and the state process with it
+  void setClosedHandler(std::function<void()> handler) { closed = handler; }
   void setStoreLayoutHandler(std::function<void()> handler) { storeLayout = handler; }
 
   /// @brief Show what the last thing the writer did produced
@@ -119,14 +132,25 @@ class CShotDocPanel : public QDialog {
    */
   void setRecording(bool on);
 
- protected:
-  /// @brief The panel lives as long as documentation mode does
-  void closeEvent(QCloseEvent* event) override;
+  /// @brief A state is being started: nothing here can be acted on until it stands
+  void setBusy(bool on, const QString& what);
 
+ protected:
   /// @brief Swallow Escape, which would otherwise close the dialog
   void reject() override;
 
  private:
+  void showEvent(QShowEvent* event) override;
+
+  void closeEvent(QCloseEvent* event) override;
+
+  void moveEvent(QMoveEvent* event) override;
+
+  void resizeEvent(QResizeEvent* event) override;
+
+  /// @brief Put the wait box in the middle of this window, wherever the window has ended up
+  void centreWaiting();
+
   void showPreview();
 
   /// @brief The combo box a picture's row carries, offering every scenario and "none"
@@ -143,6 +167,7 @@ class CShotDocPanel : public QDialog {
   std::function<void()> takeRegion;
   std::function<void()> reap;
   std::function<void()> retake;
+  std::function<void()> closed;
   std::function<void()> storeLayout;
 
   QListWidget* scenarios = nullptr;
@@ -159,6 +184,13 @@ class CShotDocPanel : public QDialog {
   QList<entry_t> entries;
   /// Guards the combo boxes while the list is rebuilt: setting one is not the writer choosing it
   bool populating = false;
+
+  /// The window manager owns a decorated window's first geometry; ours is applied once, on show
+  bool placed = false;
+
+  /// Up for as long as a state is being started. Shown, never exec()'d: the panel has to keep
+  /// answering the state process while it waits, and a nested event loop would stop it.
+  class QMessageBox* waiting = nullptr;
 };
 
 #endif  // CSHOTDOCPANEL_H

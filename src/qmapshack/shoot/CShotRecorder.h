@@ -107,15 +107,6 @@ class CShotRecorder : public QObject {
   static void clear(const QJsonArray& actions, CShotContext& ctx);
 
   /**
-     @brief Put the application back into the state a chapter starts in.
-
-     A recording is a difference from what was on screen when it started, and a build replays it
-     against the fresh fixture. So a recording performed on top of another scenario's leftovers
-     would describe a different difference than the one that is replayed.
-   */
-  static void reset(CShotContext& ctx);
-
-  /**
      @brief The window arrangement as one action.
 
      Which dockers are visible is expressible in the open, where they sit and how wide they are is

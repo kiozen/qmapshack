@@ -224,12 +224,11 @@ images which `shots.py` renders, so nothing parses stdout.
   **One process per distinct configuration state** instead: startup is 1.3 s, so ~18 s for a
   ten-picture page and ~20 min for 690, trivially parallel. `shots.py chapter` runs one process when
   every shot shares the chapter's configuration, one per shot when they do not.
-- **A platform argument cannot carry an absolute path on Windows.** Qt splits the `-platform`
-  string on `:`, so `offscreen:configfile=C:\...` arrives as `configfile=C` plus a second
-  argument, and a config file the plugin cannot open is a `qFatal` — the `3221226505` a Windows
-  run exited with, on every task but `doc`. `shots.py` therefore runs the process **in** the
-  scratch directory and names the screen file relatively; the binary and the output directory are
-  resolved to absolute paths for the same reason.
+- **The platform argument carries nothing.** It pinned a screen through the offscreen plugin's
+  `configfile=`, which a Windows run does not accept in any spelling — reported from the field, and
+  the reason every task but `doc` failed to start there. Measured 2026-09-02: the seven `test`
+  images come out byte-identical with plain `offscreen`, because `shootOne()` resizes every window
+  it photographs and `resize()` is not clamped to the screen the way `restoreGeometry()` is.
 - **The run must stay hermetic.** Two paths escape `--config` and both were found by stepping on
   them: `CDiskCache::cleanupRemovedMaps()` deletes the cache directory of every map the current
   configuration does not know, so `CMapDraw::setCacheRoot()` is called before anything reads the map
@@ -441,10 +440,9 @@ is not one flat colour would close it.
    sized by the widget's own ratio, so a HiDPI writer's map lands in the picture downscaled rather
    than rendered at 1 — same size and layout, resampled tiles. A headless run is at 1 throughout.
 
-   **Left:** two runs of `shots.py chapter test` on one machine are byte-identical, but a run today
-   differs from the committed images of the same binary in 4 to 17 pixels per picture at identical
-   size — so something in a picture is not yet a function of the configuration alone. `diff`,
-   `update` and any CI wait on finding it.
+   **Measured 2026-09-02:** two runs of `shots.py chapter test` are byte-identical to each other and
+   to all seven committed images, so on one machine a picture is a function of the configuration
+   alone. Across machines it is still unmeasured, which is what `diff`, `update` and any CI wait on.
 3. **The language loop.** English only, but pinned rather than inherited: `shots.py` passes
    `--locale en` and sets `LC_ALL`/`LANG`, and `--locale` now calls `QLocale::setDefault()` as well
    as choosing the catalogs. Without both, `prepareTranslator()` falls back to

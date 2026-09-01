@@ -33,11 +33,24 @@ class CQmsStyle : public QProxyStyle {
   /** @brief Wrap the active style, keeping whatever -style or QT_STYLE_OVERRIDE selected. */
   static void install();
 
+  /**
+     @brief Answer the hints a platform theme owns from a fixed value instead.
+
+     A documentation run must render the same on screen and off it, and the platform theme is the
+     whole difference: the offscreen platform has none, a desktop always has one. Measured with Qt
+     6.10.2, Fusion, the generic theme against no theme: of 130 style hints, every class font, the
+     palette and the standard icons, only SH_DialogButtonBox_ButtonsHaveIcons differs.
+   */
+  static void pinThemeIndependentHints();
+
   void drawPrimitive(PrimitiveElement element, const QStyleOption* option, QPainter* painter,
                      const QWidget* widget) const override;
 
   void drawControl(ControlElement element, const QStyleOption* option, QPainter* painter,
                    const QWidget* widget) const override;
+
+  int styleHint(StyleHint hint, const QStyleOption* option, const QWidget* widget,
+                QStyleHintReturn* returnData) const override;
 
  private:
   explicit CQmsStyle(QStyle* base);

@@ -156,7 +156,8 @@ class IAppSetup : public QObject {
   IAppSetup(QObject* parent) : QObject(parent) { pSelf = this; }
 
   void prepareGdal(QString gdalDataDir, QString gdalPluginsDir, QString projDataDir);
-  void prepareTranslator(QString translationPath, QString translationPrefix);
+  /// @return true when a catalog for the locale was found and installed
+  bool prepareTranslator(QString translationPath, QString translationPrefix);
   void prepareToolPaths();
 
   QString path(QString path, QString subdir, bool mkdir, QString debugName);

@@ -50,6 +50,8 @@ src/
   reads the Qt prefix out of `build/CMakeCache.txt`, because checking against whatever Qt the system
   ships reports everything newer than that as missing — `QStyleHints::setColorScheme` and
   `QPalette::Accent` both came back as non-existent while it pointed at the distribution's Qt 6.4.
+  It also fails when a Win32 SDK header precedes `<windows.h>`: no `#if defined(Q_OS_WIN32)` block
+  is compiled here, so that break reaches the user's build unchecked.
 - **Never commit or push** without being asked for that specific change.
 - **No `Co-Authored-By` lines** in commit messages.
 - For "what were we working on", read `git status && git diff` first — the live diff is ground
@@ -80,6 +82,35 @@ Target-scoped CMake. Nothing is set at directory scope except the MSVC options b
   uninstalled run is always English. All nine catalogs *are* in the binary under `:/locale` — verify
   with `strings -a -e l build/bin/qmapshack | grep qmapshack_de.qm`. A `:/locale` fallback in
   `prepareTranslator()` is what would make an uninstalled run translatable.
+- **A dialog's standard buttons come from the platform theme, not from a `.qm`.** Measured on
+  X11/KDE with Qt 6.10.2: with `KDEPlasmaPlatformTheme6` loaded they read
+  `&OK | &Schließen | &Abbrechen` whatever `--locale` says and whichever `qtbase_*.qm` is installed
+  - `QPlatformTheme::standardButtonText()` answers out of the desktop's own translations, and it
+  adds the mnemonics the generic theme leaves off. It follows `LANGUAGE`/`LC_MESSAGES`, and
+  `QT_QPA_PLATFORMTHEME=` empty does not switch it off: Qt then detects `kde` from
+  `XDG_CURRENT_DESKTOP`. `QT_QPA_PLATFORMTHEME=generic` does. **The offscreen platform loads no
+  theme at all and ignores that variable**, so a headless run never has a theme and an on-screen one
+  always does - which is what made a writer's session and the build it feeds disagree. `shots.py`
+  pins `QT_QPA_PLATFORMTHEME=generic` and `LANGUAGE` for both, and the seven `test` images are
+  byte-identical with and without that pin.
+- **What is left of the theme is pinned in the application, because the environment cannot do it.**
+  An unknown `QT_QPA_PLATFORMTHEME` does not suppress the desktop's own theme - Qt falls through to
+  the integration's `themeNames()` and loads `kde` anyway - so a session cannot be told to have no
+  theme. Measured instead (Qt 6.10.2, Fusion, generic theme against no theme): of 130 style hints,
+  every class font, the palette and five standard icons, **exactly one differs**,
+  `SH_DialogButtonBox_ButtonsHaveIcons`, plus `QIcon::themeName()` (`hicolor` against empty).
+  `CQmsStyle::pinThemeIndependentHints()` answers that hint 0 and `CShotEntry::prepare()` clears the
+  icon theme, for `--shoot` and `--doc` alike. Verified by rendering the same dialog into a QImage
+  under both platforms: identical MD5 with the pin, different without it. Anything else that turns
+  out to differ belongs in that one hint override, never in a per-symptom patch.
+- **Qt's catalog follows the application's.** `prepareTranslator()` returns whether it installed
+  one, and each `initQMapShack()` loads `qtbase_<locale>` only when `qmapshack_<locale>` (qmaptool:
+  `qmaptool_<locale>`) was found. Qt's catalogs live in `QLibraryInfo::TranslationsPath` and are
+  always installed, the application's only after `install`, so a build-tree run otherwise mixes Qt's
+  German strings into an English window. Standard buttons are not what this fixes - see above.
+- **`QLocale::system()` follows `LANGUAGE`, not only `LANG`.** Measured: `LANGUAGE=de` with
+  `LC_ALL=LANG=en_US.UTF-8` is `de_DE`. A run that must not depend on the desktop passes `--locale`;
+  `shots.py` does.
 - **`qms_options`** is the INTERFACE target carrying the project's warning set. First-party targets
   link it `PRIVATE`; bundled 3rdparty must not. Add flags through `qms_add_flag_if_supported()`.
 - **`target_link_libraries` is keyword form everywhere.** Plain and keyword signatures cannot be
@@ -125,6 +156,11 @@ clang-format -i <file> [<file> ...]
 
 Style is `.clang-format` in the project root (Google base, 120 columns). Always accept its output —
 never revert or hand-tune it, and keep reformat hunks it makes on unrelated pre-existing drift.
+
+**Win32 includes are the one exception.** `<windows.h>` must precede every other SDK header, or MSVC
+fails with `winnt.h: #error "No Target Architecture"`. clang-format sorts alphabetically and puts
+`errhandlingapi.h`, `fileapi.h`, `winbase.h` in front of it, so include only `<windows.h>` (it pulls
+those in) or guard the block with `// clang-format off` as `CMainWindow.cpp` does.
 
 - **Every control-flow block requires braces**, including single-statement bodies.
 - **Doc comments are `/** */` doxygen blocks** (`@brief`, `@param`, `@return`); inline member docs
@@ -989,6 +1025,9 @@ tree configured with it.
 *Measured* section is the evidence, taken on Linux and Windows with a throwaway probe that has
 since been deleted; do not re-derive those facts, and do not doubt them without a new measurement.
 
+`QMS-1217-doc-mode-two-process-plan.md` replaces section 7 of the plan below: documentation mode is
+a launcher process and a state process, not one process that restarts itself.
+
 `QMS-1217-screenshot-framework-plan.md` (documentation images) is implemented on branch
 `QMS-1217_demo` as a **throwaway demo** and describes what is built. §7 is the design, §8 what is
 missing. `shots.py doc <chapter>` is the writer's session, `shots.py chapter|build` the headless
@@ -1013,6 +1052,62 @@ doc/shots/fixture/shots.ini       the base a chapter opens on
   main window sizes - the window itself or anything inside it - must say how big it was, or it is a
   counted failure; an exposure is exempt. A `layout` that still carries a `geometry` warns and is
   ignored.
+- **Documentation mode is two processes.** `qmapshack --doc <repo> --doc-chapter <ch>` is the
+  launcher: it owns the panel, reads the chapter file, and does every operation that is a file
+  operation. It starts a second process with `--doc-scenario <name|->` for the state the writer
+  works in, and throws it away when they pick another. Nothing is ever taken back down, which is
+  what `reset()` could not do: the application's state is not enumerable, so a list of things to put
+  back is never complete.
+- **The launcher's main window is constructed and never shown.** `CMainWindow::self()` initialises
+  `IUnit`, `CWptIconManager`, `CGisWorkspace` and eight more singletons the panel's data goes
+  through. `CShotEntry::showsMainWindow()` is what main.cpp asks.
+- **The supervisor owns the session, the state process owns nothing.** Which chapter, which
+  scenario, which picture, what a retake changed - all of it lives in the process that is never
+  photographed and never dies. Every dialog a panel button leads to opens there too: the base
+  question, the recording's name, delete, rebind, reap. The state process reports and obeys, and its
+  only dialogs are the ones F9 opens about the widget the writer is pointing at.
+- **Closing either window ends the session.** The state process quits when its application window
+  closes; the supervisor quits when the state ends without it having asked for that (`killing`), and
+  when its panel is closed. A state process whose channel drops quits too, so a killed supervisor
+  leaves no orphan holding a window.
+- **The state process re-applies `MainWindow/geometry` after the fixture is up.** What `CMainWindow`
+  restores in its constructor is a size the docks then grow past, so a base stored at 1200x876 came
+  back 120 pixels taller and a writer could not make a size stick. Applied again once the layout is
+  populated, base -> scenario -> base returns the same window to the pixel.
+- **What `saveGeometry()` records is machine-specific, so `portableGeometry()` takes it out.** The
+  record carries the screen the window was on and that screen's width, and `restoreGeometry()`
+  drops the whole record - size included - when the width it is replayed against differs by more
+  than a quarter (Qt 6.10.2, measured: `factor < 0.8 || factor > 1.25` returns false and applies
+  nothing). A width of 0 is what Qt 5.3 and earlier wrote and takes the branch that only rejects a
+  window wider than one and a half screens, so a base stored on one machine still sizes the window
+  on the next. The position stays: `QWidgetPrivate::checkRestoredGeometry()` moves a window that
+  would land off screen back onto it, and shrinks one that does not fit. Both `storeBaseConfig()`
+  and `storeScenarioConfig()` go through it; the three tracked `.ini` files were rewritten once.
+- **Where the window sits is the writer's screen, not a stored position.** `saveGeometry()` records a
+  position on the whole desktop, so on a multi-screen desk a state process landed wherever that
+  pointed - away from the panel, and again on every scenario change. The launcher reads
+  `panel->screen()->name()` at each start and hands it over as `--doc-screen`;
+  `CShotDocMode::moveToWritersScreen()` centres the window there once the fixture is up, keeping its
+  size. Measured on three screens: asked for `DVI-I-1-1` / `DVI-I-2-2` / `HDMI-1`, the frame came out
+  at x=2320 / 400 / 4240, always 1119x769.
+- **Starting a state takes about seven seconds**, because it is a whole application. The panel says
+  so and refuses input while it happens (`setBusy`); without that the writer clicks again and the
+  clicks queue up behind a process that is still coming up.
+- **The panel's geometry is applied one event loop after it is shown.** A decorated window belongs
+  to the window manager until it is mapped, and this desktop answered the constructor's 460x760 with
+  1200x996. Once only, so a writer's own resizing survives.
+- **The two talk over a `QLocalSocket`**, named `--doc-channel`. Launcher to state: `region`,
+  `update`, `retake`, `record`, `stop`, `sync`. State to launcher: `status`, `ready`, `tagged`,
+  `changed`, `recording`, `recorded`. `Ctrl+Shift+F9` stays in the state process - it owns the
+  window the writer is pointing at.
+- **`shots.py compose <chapter> [--scenario <name>] --out <ini>` is the one composer.** The launcher
+  runs it before starting a state process, so the writer's session and the build cannot drift apart.
+  A scenario's `.ini` is a whole configuration, never a patch on the base.
+- **Never make the panel refuse to close.** It did, to keep the writer from losing it, and that
+  turned `qApp->quit()` - which `QGuiApplication` answers with `closeAllWindows()` - into a quit that
+  never happened. The panel is the launcher's only window; closing it ends the session.
+- **A recording always starts from the base**, so a scenario is a whole state and never a difference
+  from another scenario that is not stored with it.
 - **`(base)` is a row, not a scenario.** A shot taken in it has no `scenario` key, and
   `--shoot-scenario -` is how a build asks for that group. Nothing stores it, so it cannot go stale.
 - **A scenario's `.ini` is a whole configuration, never a patch**, and the base is a starting point,
@@ -1054,19 +1149,33 @@ doc/shots/fixture/shots.ini       the base a chapter opens on
   against is `IPlot::ownerTag`; making it the objectName too made a plot's address depend on how
   many plots were built before it. A plot placed by a `.ui` keeps its uic name; one built in code is
   addressed positionally (`framePlot/CPlotProfile#0`).
-- **`--shoot`, `--doc` and their five companions are parsed under `QMS_DOC_MODE` only**, so a user's
+- **`--shoot`, `--doc` and their eight companions are parsed under `QMS_DOC_MODE` only**, so a user's
   binary rejects them instead of accepting a switch that does nothing. The values stay on `CAppOpts`,
   empty, so no reader needs a branch. `src/qmaptool/setup/` is a separate copy and never had them.
+- **A Windows build owns no console.** `qt_add_executable(${APPLICATION_NAME} WIN32 ...)` links it for
+  the GUI subsystem, so everything `CLogHandler` writes to `std::cout`/`std::cerr` is dropped and a
+  `QCommandLineParser` error arrives as a message box. `IAppSetup::processArguments()` calls
+  `AttachConsole(ATTACH_PARENT_PROCESS)` for a `--shoot`/`--doc` run and reopens both streams on
+  `CONOUT$`, so the shell that started it gets the output and the state process inherits the handles.
+  Anything a documentation run has to tell the writer is a dialog, never only a log line.
+- **Never search `PATH` for the interpreter.** `shots.py` hands its own `sys.executable` over as
+  `--doc-python`, and `CShotDocLauncher` runs `shots.py compose` with that. `python3` on Windows is
+  normally the store's app execution alias, which opens the Microsoft Store and exits non-zero, and a
+  session started through the `.py` file association need not have python on `PATH` at all.
+- **A `QProcess` that fails to start emits no `finished()`.** `errorOccurred` with `FailedToStart` is
+  the only report there is, so a launcher that waits for `finished()` alone waits behind its modal
+  box forever. Put the box up before `start()`, not after: the failure is emitted from inside it.
 
 A `--shoot` or `--doc` run must set `CMapDraw::setCacheRoot()` and `CGisListWks::setDatabasePath()`
 before `CMainWindow` is constructed, or it prunes the user's tile cache and empties their
 workspace.
 
-**Qt splits the `-platform` string on `:`,** so `offscreen:configfile=C:\...` arrives as
-`configfile=C` plus a second argument, and a config file the plugin cannot open is a `qFatal`, not
-a warning — a Windows run died with exit `3221226505` on every task but `doc`. `shots.py` runs the
-process in its scratch directory and names the screen file relatively; everything else it hands
-over is absolute.
+**`-platform` is plain `offscreen`, with nothing after it.** The plugin's `configfile=` parameter
+pinned a 1920x1200 screen so `restoreGeometry()` could not clamp a window to the 800x600 default -
+and a Windows run does not start with any parameter there at all. Measured 2026-09-02: the seven
+`test` images are byte-identical without it, because every window a run photographs is resized by
+`shootOne()` and `resize()` is not clamped to the screen. Do not put it back to fix a size; resize
+the window instead. Everything else `shots.py` hands over is absolute.
 
 **The offscreen platform has no font database on Windows.** It uses `QFreeTypeFontDatabase`, which
 populates from `QLibraryInfo::LibrariesPath + "/fonts"` — a directory Qt no longer ships — so a

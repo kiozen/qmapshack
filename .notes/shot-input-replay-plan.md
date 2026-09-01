@@ -171,6 +171,35 @@ that still carries a `geometry` warns and is ignored; take the key out and give 
 scenario the size the geometry used to restore - `doc/shots/test.json` was migrated that way, and
 its pictures came out byte-identical apart from `track-scropt`, which had been failing.
 
+## Setting a scenario up: restart, never undo
+
+Documentation mode used to replay a scenario over whatever the last one left on screen, and
+`CShotRecorder::reset()` was a hand-kept list of things to take back down - the screen option, the
+mouse delegate, the workspace hint, the selection, the expanded rows. That list can never be
+complete: the application's state is not enumerable, so every step that leaves a trace somewhere
+nothing walks is a leak, and the writer ends up photographing a state no scenario describes. Each
+leak found added another line, which is the wrong shape.
+
+A build never had the problem, because it runs **one process per scenario**. Documentation mode now
+gets the same guarantee:
+
+- Picking a scenario, or starting a recording, writes `Documentation/restartScenario` (and
+  `restartRecording`) into the scratch configuration and quits.
+- `shots.py doc` owns the loop: it runs the application, reads that key back, and starts it again.
+  The loop lives in the launcher because the configuration is the launcher's - the application
+  restarting itself would pull the config out from under the session.
+- `CShotDocMode::start()` reads the request and clears it, so a session the writer ends by closing
+  the window leaves nothing behind and a request can never fire twice. `slotBuildFixture()` then
+  performs the scenario in an application with nothing on top of it.
+- `kBaseScenario` (`-`) is the base, the same sentinel `--shoot-scenario` already uses.
+
+**`CShotRecorder::reset()` is gone.** Nothing undoes anything any more; `clear()` stays, because the
+headless build does reuse one process across the shots of a scenario.
+
+**A recording always starts from the base.** It used to carry the selected scenario's steps so the
+common part did not have to be performed again, which made a recording a difference from something
+it did not store - re-recording or deleting that scenario silently changed what this one meant.
+
 ## Open
 
 - **`track-select` does not replay.** Both its geographic clicks fail with *"has nothing to show at

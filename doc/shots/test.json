@@ -1,24 +1,20 @@
 {
     "scenarios": {
-        "track-details": [
+        "demo-track": [
             {
                 "do": "layout",
-                "state": "AAAA/wAAAAD9AAAAAgAAAAAAAAEtAAAClfwCAAAAA/wAAAA6AAABRwAAAQABAAAa+gAAAAABAAAAAvsAAAAaAGQAbwBjAGsAVwBvAHIAawBzAHAAYQBjAGUBAAAAAAAAARUAAAB9AP////sAAAAOAGQAbwBjAGsAUgB0AGUBAAAAAP////8AAAEtAP////wAAAGHAAABSAAAAN0BAAAa+gAAAAIBAAAAA/sAAAAQAGQAbwBjAGsATQBhAHAAcwEAAAAA/////wAAAJAA////+wAAAA4AZABvAGMAawBEAGUAbQEAAAAAAAABFQAAAJsA////+wAAABgAZABvAGMAawBEAGEAdABhAGIAYQBzAGUBAAAAAP////8AAACaAP////sAAAAOAGQAbwBjAGsAUABvAGkAAAAB/gAAANsAAAAyAP///wAAAAEAAAFmAAACn/wCAAAAAfsAAAAYAGQAbwBjAGsAUgBlAGEAbAB0AGkAbQBlAAAAADoAAAKfAAAAjAD///8AAAVJAAAClQAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAIAAAABAAAADgB0AG8AbwBsAEIAYQByAQAAAAD/////AAAAAAAAAAA=",
+                "state": "AAAA/wAAAAD9AAAAAgAAAAAAAAEtAAADF/wCAAAAA/wAAAA6AAABggAAAQABAAAa+gAAAAABAAAAAvsAAAAaAGQAbwBjAGsAVwBvAHIAawBzAHAAYQBjAGUBAAAAAAAAARUAAAB9AP////sAAAAOAGQAbwBjAGsAUgB0AGUBAAAAAP////8AAAEtAP////wAAAHCAAABjwAAAN0BAAAa+gAAAAIBAAAAA/sAAAAQAGQAbwBjAGsATQBhAHAAcwEAAAAA/////wAAAJAA////+wAAAA4AZABvAGMAawBEAGUAbQEAAAAAAAABFQAAAJsA////+wAAABgAZABvAGMAawBEAGEAdABhAGIAYQBzAGUBAAAAAP////8AAACaAP////sAAAAOAGQAbwBjAGsAUABvAGkAAAAB/gAAANsAAAAyAP///wAAAAEAAAFmAAACn/wCAAAAAfsAAAAYAGQAbwBjAGsAUgBlAGEAbAB0AGkAbQBlAAAAADoAAAKfAAAAjAD///8AAAMsAAADFwAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAIAAAABAAAADgB0AG8AbwBsAEIAYQByAQAAAAD/////AAAAAAAAAAA=",
                 "tab": 1
             },
             {
                 "do": "view",
-                "lat": 47.5,
-                "lon": 11.009916666666665,
-                "zoom": 11
+                "lat": 48.99999999998731,
+                "lon": 11.999999999981693,
+                "zoom": 5
             },
             {
                 "do": "expand",
                 "item": "Shoot Demo"
-            },
-            {
-                "do": "select",
-                "item": "Shoot Demo/trk:Demo Track"
             },
             {
                 "do": "menu",
@@ -28,6 +24,16 @@
             {
                 "action": "actionEditDetails",
                 "do": "trigger"
+            },
+            {
+                "do": "select",
+                "item": "Shoot Demo/trk:Demo Track"
+            },
+            {
+                "do": "set",
+                "property": "currentIndex",
+                "value": 1,
+                "widget": "tabWidget"
             }
         ],
         "track-screen-option": [
@@ -51,93 +57,6 @@
                 "item": "Shoot Demo/trk:Demo Track",
                 "lat": 47.51000367803942,
                 "lon": 11.00507474728526
-            }
-        ],
-        "track-select": [
-            {
-                "do": "layout",
-                "state": "AAAA/wAAAAD9AAAAAgAAAAAAAAEtAAAClfwCAAAAA/wAAAA6AAABRwAAAQABAAAa+gAAAAABAAAAAvsAAAAaAGQAbwBjAGsAVwBvAHIAawBzAHAAYQBjAGUBAAAAAAAAARUAAAB9AP////sAAAAOAGQAbwBjAGsAUgB0AGUBAAAAAP////8AAAEtAP////wAAAGHAAABSAAAAN0BAAAa+gAAAAIBAAAAA/sAAAAQAGQAbwBjAGsATQBhAHAAcwEAAAAA/////wAAAJAA////+wAAAA4AZABvAGMAawBEAGUAbQEAAAAAAAABFQAAAJsA////+wAAABgAZABvAGMAawBEAGEAdABhAGIAYQBzAGUBAAAAAP////8AAACaAP////sAAAAOAGQAbwBjAGsAUABvAGkAAAAB/gAAANsAAAAyAP///wAAAAEAAAFmAAACn/wCAAAAAfsAAAAYAGQAbwBjAGsAUgBlAGEAbAB0AGkAbQBlAAAAADoAAAKfAAAAjAD///8AAAMsAAAClQAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAIAAAABAAAADgB0AG8AbwBsAEIAYQByAQAAAAD/////AAAAAAAAAAA=",
-                "tab": 0
-            },
-            {
-                "do": "view",
-                "lat": 47.500509787652774,
-                "lon": 11.009916666666662,
-                "zoom": 11
-            },
-            {
-                "do": "expand",
-                "item": "Shoot Demo"
-            },
-            {
-                "do": "select",
-                "item": "Shoot Demo/trk:Demo Track"
-            },
-            {
-                "do": "menu",
-                "item": "Shoot Demo/trk:Demo Track",
-                "widget": "treeWks"
-            },
-            {
-                "action": "actionRangeTrk",
-                "do": "trigger"
-            },
-            {
-                "do": "click",
-                "item": "Shoot Demo/trk:Demo Track",
-                "lat": 47.50269757012181,
-                "lon": 11.008973435618337
-            },
-            {
-                "do": "click",
-                "item": "Shoot Demo/trk:Demo Track",
-                "lat": 47.49912910130853,
-                "lon": 11.010482605295659
-            }
-        ],
-        "track-selection": [
-            {
-                "do": "layout",
-                "state": "AAAA/wAAAAD9AAAAAgAAAAAAAAEtAAAClfwCAAAAA/wAAAA6AAABRwAAAQABAAAa+gAAAAABAAAAAvsAAAAaAGQAbwBjAGsAVwBvAHIAawBzAHAAYQBjAGUBAAAAAAAAARUAAAB9AP////sAAAAOAGQAbwBjAGsAUgB0AGUBAAAAAP////8AAAEtAP////wAAAGHAAABSAAAAN0BAAAa+gAAAAIBAAAAA/sAAAAQAGQAbwBjAGsATQBhAHAAcwEAAAAA/////wAAAJAA////+wAAAA4AZABvAGMAawBEAGUAbQEAAAAAAAABFQAAAJsA////+wAAABgAZABvAGMAawBEAGEAdABhAGIAYQBzAGUBAAAAAP////8AAACaAP////sAAAAOAGQAbwBjAGsAUABvAGkAAAAB/gAAANsAAAAyAP///wAAAAEAAAFmAAACn/wCAAAAAfsAAAAYAGQAbwBjAGsAUgBlAGEAbAB0AGkAbQBlAAAAADoAAAKfAAAAjAD///8AAAMsAAAClQAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAIAAAABAAAADgB0AG8AbwBsAEIAYQByAQAAAAD/////AAAAAAAAAAA=",
-                "tab": 0
-            },
-            {
-                "do": "view",
-                "lat": 47.5,
-                "lon": 11.009916666666665,
-                "zoom": 11
-            },
-            {
-                "do": "expand",
-                "item": "Shoot Demo"
-            },
-            {
-                "do": "select",
-                "item": "Shoot Demo/trk:Demo Track"
-            },
-            {
-                "do": "click",
-                "item": "Shoot Demo/trk:Demo Track",
-                "lat": 47.50528880616538,
-                "lon": 11.00815596870979
-            },
-            {
-                "do": "click",
-                "item": "Shoot Demo/trk:Demo Track",
-                "lat": 47.50414188139954,
-                "lon": 11.001427587231737
-            },
-            {
-                "do": "click",
-                "item": "Shoot Demo/trk:Demo Track",
-                "lat": 47.50448171357226,
-                "lon": 11.008407496989344
-            },
-            {
-                "do": "click",
-                "item": "Shoot Demo/trk:Demo Track",
-                "lat": 47.500828402422115,
-                "lon": 11.009790902526888
             }
         ]
     },
@@ -200,14 +119,14 @@
         },
         {
             "id": "test/track-details",
-            "scenario": "track-details",
+            "scenario": "demo-track",
             "set": {
                 "currentIndex": 1,
                 "tabWidget.currentIndex": 0
             },
             "size": [
-                1660,
-                741
+                1119,
+                871
             ],
             "widget": "tabWidget"
         },

@@ -25,6 +25,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QRect>
+#include <QRegularExpression>
 #include <QTabWidget>
 #include <QWidget>
 
@@ -265,6 +266,61 @@ QTreeWidgetItem* CShotChapter::resolveItemPath(CGisListWks* list, const QString&
 
   const QString& rest = path.section('/', 1);
   return findItem(project, rest.section(':', 0, 0), rest.section(':', 1));
+}
+
+QString CShotChapter::chapterPath(const QDir& repo, const QString& chapter) {
+  QDir dir(repo.absoluteFilePath("doc/shots"));
+  dir.mkpath(".");
+  return dir.absoluteFilePath(chapter + ".json");
+}
+
+QString CShotChapter::imagePath(const QDir& repo, const QString& id) {
+  return QDir(repo.absoluteFilePath("doc/images")).absoluteFilePath(id + ".png");
+}
+
+QString CShotChapter::scenarioConfigPath(const QDir& repo, const QString& chapter, const QString& scenario) {
+  QDir dir(repo.absoluteFilePath("doc/shots/" + chapter));
+  dir.mkpath(".");
+  return dir.absoluteFilePath(scenario + ".ini");
+}
+
+QSet<QString> CShotChapter::pageReferences(const QDir& repo, const QString& chapter) {
+  QSet<QString> referenced;
+  QFile page(repo.absoluteFilePath("doc/pages/" + chapter + ".md"));
+  if (page.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    static const QRegularExpression pattern("images/([\\w./-]+)\\.png");
+    QRegularExpressionMatchIterator matches = pattern.globalMatch(QString::fromUtf8(page.readAll()));
+    while (matches.hasNext()) {
+      referenced << matches.next().captured(1);
+    }
+  }
+  return referenced;
+}
+
+QSet<QString> CShotChapter::idsOf(const QString& file) {
+  QSet<QString> ids;
+  QFile in(file);
+  if (in.open(QIODevice::ReadOnly)) {
+    const QJsonArray& shots = QJsonDocument::fromJson(in.readAll()).object()["shots"].toArray();
+    for (const QJsonValue& value : shots) {
+      ids << value.toObject()["id"].toString();
+    }
+  }
+  return ids;
+}
+
+QJsonObject CShotChapter::shotOf(const QString& file, const QString& id) {
+  QFile in(file);
+  if (!in.open(QIODevice::ReadOnly)) {
+    return {};
+  }
+  const QJsonArray& shots = QJsonDocument::fromJson(in.readAll()).object()["shots"].toArray();
+  for (const QJsonValue& value : shots) {
+    if (value.toObject()["id"].toString() == id) {
+      return value.toObject();
+    }
+  }
+  return {};
 }
 
 bool CShotChapter::store(const QString& file, const QJsonObject& shot) {

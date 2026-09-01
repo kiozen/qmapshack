@@ -26,36 +26,30 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QListWidget>
+#include <QMessageBox>
+#include <QMoveEvent>
 #include <QPixmap>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QScreen>
+#include <QShowEvent>
 #include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <QWindow>
 #include <utility>
 
 #include "theme/CUiTheme.h"
 
 namespace {
-/// What a picture's combo box and the first row of the scenario list call the application as the
-/// configuration starts it. It is not a scenario: nothing stores it, and a shot taken in it simply
-/// has no scenario of its own.
-const QString kBaseRow = QStringLiteral("(base)");
-
 enum column_e { eColumnId, eColumnState, eColumnScenario };
 }  // namespace
 
 CShotDocPanel::CShotDocPanel(const QString& chapter, QWidget* parent)
-    // No WindowStaysOnTopHint: it kept the panel above the modal dialogs the main window opens
-    // too, and one of those centred under it could neither be reached, closed nor moved out from
-    // under it - the application had to be killed. A parented Qt::Tool already floats above the
-    // window it belongs to, which is all this needs.
-    : QDialog(parent, Qt::Tool | Qt::WindowDoesNotAcceptFocus | Qt::CustomizeWindowHint | Qt::WindowTitleHint) {
+    // A window of the supervisor, which is never photographed: an ordinary one, with the title bar
+    // and the close button a writer expects, and it takes focus like any other.
+    : QDialog(parent, Qt::Window) {
   setWindowTitle(tr("Documentation mode"));
-  setAttribute(Qt::WA_ShowWithoutActivating);
-  // Never the reason the application stays alive: closing the main window has to end the session
-  // even though this panel is still up.
-  setAttribute(Qt::WA_QuitOnClose, false);
 
   QVBoxLayout* layout = new QVBoxLayout(this);
 
@@ -126,11 +120,11 @@ CShotDocPanel::CShotDocPanel(const QString& chapter, QWidget* parent)
   scenarioButtons->addWidget(deleteButton);
   whileIdle << deleteButton;
 
-  QPushButton* store = new QPushButton(tr("Update"), this);
+  QPushButton* store = new QPushButton(tr("Save config"), this);
   store->setToolTip(
-      tr("Put the window arrangement, the map and the settings you have now into the selected "
-         "scenario, replacing the ones it had. On (base) it stores them as what every chapter "
-         "starts from, which asks first."));
+      tr("Save the window arrangement, the size, the map and the settings you have now as the "
+         "configuration of the state you are in, replacing the one it had. In the base it becomes "
+         "what every chapter starts from, which asks first."));
   connect(store, &QPushButton::clicked, this, [this]() {
     if (storeLayout) {
       storeLayout();
@@ -215,16 +209,26 @@ CShotDocPanel::CShotDocPanel(const QString& chapter, QWidget* parent)
   layout->addWidget(status);
 
   resize(460, 760);
+}
 
-  // Out of the way of the main window, on the screen that window is actually on - the primary
-  // screen can be a different one.
-  const QWidget* anchor = (nullptr != parent) ? parent->window() : nullptr;
-  const QScreen* screen =
-      (nullptr != anchor && nullptr != anchor->screen()) ? anchor->screen() : QGuiApplication::primaryScreen();
-  if (nullptr != screen) {
-    const QRect& available = screen->availableGeometry();
-    move(available.right() - width() - 20, available.top() + 20);
+void CShotDocPanel::showEvent(QShowEvent* event) {
+  QDialog::showEvent(event);
+  if (placed) {
+    return;
   }
+  placed = true;
+
+  // Deferred, and once. A decorated window's geometry is the window manager's until it has mapped
+  // it, and this desktop's answer was 1200x996 whatever the constructor asked for; the resize only
+  // sticks after that has happened. The writer's own resizing is left alone.
+  QTimer::singleShot(0, this, [this]() {
+    resize(460, 760);
+    const QScreen* screen = (nullptr != windowHandle()) ? windowHandle()->screen() : QGuiApplication::primaryScreen();
+    if (nullptr != screen) {
+      const QRect& available = screen->availableGeometry();
+      move(available.right() - width() - 20, available.top() + 20);
+    }
+  });
 }
 
 void CShotDocPanel::setScenarios(const QStringList& names, const QString& current) {
@@ -233,7 +237,7 @@ void CShotDocPanel::setScenarios(const QStringList& names, const QString& curren
   scenarios->clear();
   // The base first, and it is not in `names`: it is not stored, so it cannot go stale, which is the
   // whole reason it is a row here rather than a scenario every chapter carries a copy of.
-  QListWidgetItem* base = new QListWidgetItem(kBaseRow, scenarios);
+  QListWidgetItem* base = new QListWidgetItem(CShotDocPanel::kBaseRow, scenarios);
   base->setData(Qt::UserRole, QString());
   for (const QString& name : names) {
     (new QListWidgetItem(name, scenarios))->setData(Qt::UserRole, name);
@@ -249,14 +253,14 @@ void CShotDocPanel::setScenarios(const QStringList& names, const QString& curren
 
 void CShotDocPanel::buildScenarioCell(QTreeWidgetItem* row, const entry_t& entry) {
   QComboBox* combo = new QComboBox(shots);
-  combo->addItem(kBaseRow);
+  combo->addItem(CShotDocPanel::kBaseRow);
   combo->addItems(scenarioNames);
   // A shot naming a scenario the chapter has not got is a broken chapter file, not a reason to
   // silently rebind it to something else.
   if (!entry.scenario.isEmpty() && !scenarioNames.contains(entry.scenario)) {
     combo->addItem(entry.scenario);
   }
-  combo->setCurrentText(entry.scenario.isEmpty() ? kBaseRow : entry.scenario);
+  combo->setCurrentText(entry.scenario.isEmpty() ? CShotDocPanel::kBaseRow : entry.scenario);
 
   const QString& id = entry.id;
   connect(combo, &QComboBox::currentTextChanged, this, [this, id](const QString& chosen) {
@@ -264,7 +268,7 @@ void CShotDocPanel::buildScenarioCell(QTreeWidgetItem* row, const entry_t& entry
       return;
     }
     // Queued: answering this rebuilds the list, which deletes the combo box that is emitting.
-    const QString& scenario = (kBaseRow == chosen) ? QString() : chosen;
+    const QString& scenario = (CShotDocPanel::kBaseRow == chosen) ? QString() : chosen;
     QTimer::singleShot(0, this, [this, id, scenario]() {
       if (rebind) {
         rebind(id, scenario);
@@ -313,6 +317,33 @@ void CShotDocPanel::setShots(const QList<entry_t>& shots_) {
   showPreview();
 }
 
+void CShotDocPanel::centreWaiting() {
+  if (nullptr == waiting || !waiting->isVisible()) {
+    return;
+  }
+  waiting->adjustSize();
+  const QPoint& centre = frameGeometry().center();
+  waiting->move(centre.x() - waiting->width() / 2, centre.y() - waiting->height() / 2);
+  waiting->raise();
+}
+
+void CShotDocPanel::moveEvent(QMoveEvent* event) {
+  QDialog::moveEvent(event);
+  centreWaiting();
+}
+
+void CShotDocPanel::resizeEvent(QResizeEvent* event) {
+  QDialog::resizeEvent(event);
+  centreWaiting();
+}
+
+void CShotDocPanel::closeEvent(QCloseEvent* event) {
+  event->accept();
+  if (closed) {
+    closed();
+  }
+}
+
 void CShotDocPanel::showPreview() {
   const int row = shots->indexOfTopLevelItem(shots->currentItem());
   const entry_t& entry = entries.value(row);
@@ -330,6 +361,37 @@ void CShotDocPanel::showPreview() {
 
 void CShotDocPanel::setStatus(const QString& text) { status->setText(text); }
 
+void CShotDocPanel::setBusy(bool on, const QString& what) {
+  // Starting a state is a whole application coming up, seven seconds of it. The box says so and,
+  // being window modal, keeps the panel out of reach while it happens - so nothing else here has to
+  // be disabled or dressed up.
+  if (on) {
+    if (nullptr == waiting) {
+      waiting = new QMessageBox(QMessageBox::Information, tr("Documentation mode"), what, QMessageBox::NoButton, this);
+      // Window modal and shown, never exec()'d: the panel has to keep answering the state process
+      // while it waits, and a nested event loop would stop it.
+      waiting->setWindowModality(Qt::WindowModal);
+    }
+    waiting->setText(what);
+    waiting->show();
+    // After show(), because QMessageBox puts an OK back whenever it is about to be shown with an
+    // empty button box - and there is nothing here for the writer to answer.
+    waiting->setStandardButtons(QMessageBox::NoButton);
+    // Deferred as well as immediate: the panel's own geometry is still the window manager's until
+    // it has mapped it, so the first placement can be against a position the panel no longer has.
+    centreWaiting();
+    QTimer::singleShot(0, waiting, [this]() { centreWaiting(); });
+    QTimer::singleShot(250, waiting, [this]() { centreWaiting(); });
+    return;
+  }
+
+  if (nullptr != waiting) {
+    waiting->hide();
+    waiting->deleteLater();
+    waiting = nullptr;
+  }
+}
+
 void CShotDocPanel::setRecording(bool on) {
   recordButton->setText(on ? tr("Stop recording") : tr("Record..."));
   for (QPushButton* button : std::as_const(whileIdle)) {
@@ -341,15 +403,6 @@ void CShotDocPanel::setRecording(bool on) {
   if (!on) {
     reapButton->setEnabled(false);
   }
-}
-
-void CShotDocPanel::closeEvent(QCloseEvent* event) {
-  // The writer cannot close it, the application can.
-  if (QCoreApplication::closingDown()) {
-    event->accept();
-    return;
-  }
-  event->ignore();
 }
 
 void CShotDocPanel::reject() {}
@@ -371,6 +424,15 @@ QString CShotDocPanel::label(state_e state) {
 QString CShotDocPanel::currentId() const {
   const QTreeWidgetItem* item = shots->currentItem();
   return (nullptr == item) ? QString() : item->text(eColumnId);
+}
+
+void CShotDocPanel::setCurrentShot(const QString& id) {
+  for (int row = 0; row < entries.size(); row++) {
+    if (entries.at(row).id == id) {
+      shots->setCurrentItem(shots->topLevelItem(row));
+      return;
+    }
+  }
 }
 
 void CShotDocPanel::setPage(const QString& path, bool exists) {

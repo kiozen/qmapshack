@@ -35,6 +35,12 @@
 #include "setup/CLogHandler.h"
 #include "theme/CUiTheme.h"
 
+#ifdef Q_OS_WIN
+#include <windows.h>
+
+#include <cstdio>
+#endif
+
 IAppSetup* IAppSetup::instance = nullptr;
 
 IAppSetup* IAppSetup::getPlatformInstance() {
@@ -86,7 +92,7 @@ QString IAppSetup::path(QString path, QString subdir, bool mkdir, QString debugN
   return pathDir.absolutePath();
 }
 
-void IAppSetup::prepareTranslator(QString translationPath, QString translationPrefix) {
+bool IAppSetup::prepareTranslator(QString translationPath, QString translationPrefix) {
   QString locale = qlOpts->locale != nullptr ? qlOpts->locale : QLocale::system().name();
   QDir dir(translationPath);
   if (!QFile::exists(dir.absoluteFilePath(translationPrefix + locale + ".qm"))) {
@@ -103,15 +109,42 @@ void IAppSetup::prepareTranslator(QString translationPath, QString translationPr
   if (qtTranslator->load(translationPrefix + locale, translationPath)) {
     app->installTranslator(qtTranslator);
     qDebug() << "using file '" + qtTranslator->filePath() + "' for translations.";
-  } else {
-    qWarning() << "no translations found for file '" + translationPath + "/" + translationPrefix + locale +
-                      ".qm' (using default).";
+    return true;
   }
+
+  qWarning() << "no translations found for file '" + translationPath + "/" + translationPrefix + locale +
+                    ".qm' (using default).";
+  return false;
 }
 
 void IAppSetup::initLogHandler() { CLogHandler::initLogHandler(logDir(), qlOpts->logfile, qlOpts->debug); }
 
 CAppOpts* qlOpts = nullptr;
+
+void IAppSetup::attachParentConsole(int argc, char** argv) {
+#ifdef Q_OS_WIN
+  // The application is linked for the GUI subsystem, so it owns no console and everything
+  // CLogHandler prints goes nowhere. A documentation run is started from a shell and its output is
+  // the only diagnosis there is, so take over the console it was started from. A state process
+  // inherits these handles, so its own output lands there too.
+  //
+  // Before QApplication exists, so the argument list is the raw one: a platform plugin that cannot
+  // be loaded and every other fatal of the constructor abort a release build without a word, and
+  // the run then looks like it started and stopped for no reason.
+  bool wanted = false;
+  for (int i = 1; i < argc && !wanted; i++) {
+    const QByteArray arg(argv[i]);
+    wanted = arg.startsWith("--shoot") || arg.startsWith("--doc");
+  }
+  if (wanted && AttachConsole(ATTACH_PARENT_PROCESS)) {
+    freopen("CONOUT$", "w", stdout);
+    freopen("CONOUT$", "w", stderr);
+  }
+#else
+  Q_UNUSED(argc)
+  Q_UNUSED(argv)
+#endif
+}
 
 void IAppSetup::processArguments() {
   CCommandProcessor cmdParse;

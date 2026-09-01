@@ -19,8 +19,10 @@
 #ifndef CSHOTCHAPTER_H
 #define CSHOTCHAPTER_H
 
+#include <QDir>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QVariant>
@@ -42,6 +44,26 @@ namespace CShotChapter {
 /// What `--shoot-scenario` is given for the shots that name no scenario: the application as the
 /// configuration starts it. A scenario cannot be called this - the panel refuses the name.
 const QString kBaseScenario = QStringLiteral("-");
+
+// --- where a chapter's files are ---------------------------------------------------------------
+
+/// @brief `doc/shots/<chapter>.json`; the directory is created
+QString chapterPath(const QDir& repo, const QString& chapter);
+
+/// @brief `doc/images/<id>.png`
+QString imagePath(const QDir& repo, const QString& id);
+
+/// @brief `doc/shots/<chapter>/<scenario>.ini`; the directory is created
+QString scenarioConfigPath(const QDir& repo, const QString& chapter, const QString& scenario);
+
+/// @return Every `images/<id>.png` the chapter's page references - the only source of shot names
+QSet<QString> pageReferences(const QDir& repo, const QString& chapter);
+
+/// @return Every id the chapter file already knows
+QSet<QString> idsOf(const QString& file);
+
+/// @return The chapter's entry for this id, empty when it has none
+QJsonObject shotOf(const QString& file, const QString& id);
 
 // --- addressing a widget of the running application -------------------------------------------
 

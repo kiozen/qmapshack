@@ -24,6 +24,9 @@
 #include <QStyleOptionMenuItem>
 
 namespace {
+/// Set once by a documentation run; see CQmsStyle::pinThemeIndependentHints()
+bool pinnedHints = false;
+
 constexpr qint32 kButtonBorderWidth = 2;
 constexpr qint32 kMenuBarWidth = 4;
 /** @brief Tint of a checked menu row. Painted under the content, so it does not dim the text. */
@@ -50,6 +53,18 @@ void CQmsStyle::install() {
   // Re-create the active style by name: setStyle() deletes the style it replaces, so the running
   // one cannot be handed over as the base. Doing it this way keeps the user's -style choice.
   QApplication::setStyle(new CQmsStyle(QStyleFactory::create(QApplication::style()->objectName())));
+}
+
+void CQmsStyle::pinThemeIndependentHints() { pinnedHints = true; }
+
+int CQmsStyle::styleHint(StyleHint hint, const QStyleOption* option, const QWidget* widget,
+                         QStyleHintReturn* returnData) const {
+  // The theme says yes on a desktop and there is no theme off screen, so a dialog photographed in
+  // the writer's session carried a tick and a cross on buttons the headless build drew bare.
+  if (pinnedHints && SH_DialogButtonBox_ButtonsHaveIcons == hint) {
+    return 0;
+  }
+  return QProxyStyle::styleHint(hint, option, widget, returnData);
 }
 
 void CQmsStyle::drawPrimitive(PrimitiveElement element, const QStyleOption* option, QPainter* painter,

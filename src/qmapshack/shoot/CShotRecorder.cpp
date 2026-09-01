@@ -1237,32 +1237,6 @@ int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx, const st
   return state->failures;
 }
 
-void CShotRecorder::reset(CShotContext& ctx) {
-  if (CCanvas* canvas = ctx.canvas(); nullptr != canvas) {
-    // The screen option first: CMouseNormal paints its background, while its buttons are widgets on
-    // the canvas. Dropping the delegate before it is closed leaves the buttons standing on nothing.
-    if (CMouseNormal* mouse = canvas->findChild<CMouseNormal*>(); nullptr != mouse) {
-      mouse->clearScreenOption();
-    }
-    // Then back to plain mouse handling: a scenario can leave the canvas in range or edit mode, and
-    // replacing the delegate destroys it - its destructor is what puts the track back to normal.
-    canvas->resetMouse();
-  }
-
-  // setCurrentItem() below emits nothing, so the hint the workspace put on the canvas when an item
-  // was selected outlives it.
-  CGisWorkspace::self().slotWksItemSelectionReset();
-
-  CGisListWks* list = ctx.wksList();
-  if (nullptr == list) {
-    return;
-  }
-  list->setCurrentItem(nullptr);
-  for (int i = 0; i < list->topLevelItemCount(); i++) {
-    list->topLevelItem(i)->setExpanded(false);
-  }
-}
-
 void CShotRecorder::clear(const QJsonArray& actions, CShotContext& ctx) {
   CCanvas* canvas = ctx.canvas();
   if (nullptr == canvas) {
