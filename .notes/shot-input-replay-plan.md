@@ -138,6 +138,12 @@ Done and regression tested against `doc/shots/test.json`, which comes out byte-i
   `Details*` exposures.
 - A window a scenario opened is tagged as `widget: ""` plus `window: <class>`, and replay refuses
   when another window is on top.
+- `IPlot` sets no `objectName` of its own, so a plot built in code is addressed positionally
+  (`framePlot/CPlotProfile#0`) and one placed by a `.ui` keeps its uic name. The instance tag the
+  track compares its focus owner against is `IPlot::ownerTag`.
+- Selecting a workspace item puts a hint on the canvas telling the user to click the map. It is a
+  leftover of the selection, so `clear()` takes it back with the rest of them - and a scenario that
+  only wants an item's options on the map should click the map, not the workspace row.
 - Every menu owner names its actions.
 - The three adapters, each verified end to end against a throwaway chapter: a row's visibility
   button greys the project out, a plot click at 2400 lands on index 60 at 2.40 km, and an icon grid
@@ -167,9 +173,5 @@ its pictures came out byte-identical apart from `track-scropt`, which had been f
 
 ## Open
 
-- `IPlot` no longer sets its own `objectName`, so a plot built in code is addressed positionally
-  (`framePlot/CPlotProfile#0`) and one placed by a `.ui` keeps its uic name. The instance tag the
-  track's focus owner is compared against moved to `IPlot::ownerTag`.
-- `track-scropt`'s rectangle now frames its panel at the 1666 px window it was dragged on, and a
-  neighbouring bubble has moved into the top-left corner: at another width the map recentres and
-  what is beside the panel changes. Re-drag the rectangle if that corner matters.
+Nothing. The vocabulary, the adapters, the noise filter and the option gating are all in; the window
+size has one record, and the test chapter reproduces byte-identically with no failures.
