@@ -170,9 +170,6 @@ its pictures came out byte-identical apart from `track-scropt`, which had been f
 - `IPlot` no longer sets its own `objectName`, so a plot built in code is addressed positionally
   (`framePlot/CPlotProfile#0`) and one placed by a `.ui` keeps its uic name. The instance tag the
   track's focus owner is compared against moved to `IPlot::ownerTag`.
-- `CDetailsTrk` pins the main window to a 1648x717 minimum while the details page is open, so every
-  scenario recorded with it open carries that width. Not a documentation problem and not fixed here:
-  `details-minimum-size-plan.md`, QMS-1234.
 - `track-scropt`'s rectangle now frames its panel at the 1666 px window it was dragged on, and a
   neighbouring bubble has moved into the top-left corner: at another width the map recentres and
   what is beside the panel changes. Re-drag the rectangle if that corner matters.
