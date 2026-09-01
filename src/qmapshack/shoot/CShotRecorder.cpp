@@ -1239,6 +1239,9 @@ int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx, const st
 
 void CShotRecorder::reset(CShotContext& ctx) {
   if (CCanvas* canvas = ctx.canvas(); nullptr != canvas) {
+    // A scenario can leave the canvas in range or edit mode, and nothing else takes those down.
+    // Replacing the delegate destroys it, and its destructor is what puts the track back to normal.
+    canvas->resetMouse();
     if (CMouseNormal* mouse = canvas->findChild<CMouseNormal*>(); nullptr != mouse) {
       mouse->clearScreenOption();
     }

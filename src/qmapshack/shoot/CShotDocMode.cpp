@@ -493,6 +493,11 @@ void CShotDocMode::showScenario(const QString& name) {
   }
 
   refreshPanel(tr("Setting %1 up...").arg(name));
+  // From the chapter's start, never on top of what is on screen. A scenario is a state, not a
+  // difference from whatever the last one left - and documentation mode holds that state on purpose,
+  // so nothing else takes it down. Replaying over it flips every step that toggles: picking the same
+  // scenario twice would put the window somewhere the scenario never describes.
+  CShotRecorder::reset(*ctx);
   // Nothing takes it back down again: seeing the state is half of why the writer clicked.
   const int failures = CShotRecorder::replay(recorded.value(name).toArray(), *ctx);
   refreshPanel(failures > 0

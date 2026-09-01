@@ -173,5 +173,12 @@ its pictures came out byte-identical apart from `track-scropt`, which had been f
 
 ## Open
 
-Nothing. The vocabulary, the adapters, the noise filter and the option gating are all in; the window
-size has one record, and the test chapter reproduces byte-identically with no failures.
+- **`track-select` does not replay.** Both its geographic clicks fail with *"has nothing to show at
+  that point"*, on a single replay, not only a repeated one. The scenario triggers `actionRangeTrk`
+  first, and a `click` carrying a lat/lon resolves an item through the normal mouse handling, which
+  is not what is on the canvas in range mode. Either the geographic click has to reach the range
+  delegate, or range selection needs a vocabulary of its own - a distance along the track, as the
+  plot has. Nothing photographs the scenario, so nothing fails because of it yet.
+
+Everything else is in: the vocabulary, the adapters, the noise filter, the option gating, one record
+of the window size, and a test chapter that reproduces byte-identically with no failures.
