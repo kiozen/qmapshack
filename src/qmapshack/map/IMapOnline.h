@@ -35,6 +35,9 @@ class IMapOnline : public IMap {
   IMapOnline(CMapDraw* parent);
   virtual ~IMapOnline() override;
 
+  int pendingTiles() override;
+  int failedTiles() override;
+
  signals:
   void sigQueueChanged();
 
@@ -57,6 +60,8 @@ class IMapOnline : public IMap {
   QList<QString> urlPending;
 
   bool lastRequest = false;
+  /// Tiles the server never delivered; a picture drawn without them is incomplete
+  int tilesFailed = 0;
   QElapsedTimer timeLastUpdate;
   QString name;
 

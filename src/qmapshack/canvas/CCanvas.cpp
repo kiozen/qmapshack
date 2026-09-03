@@ -1334,6 +1334,10 @@ void CCanvas::waitForDrawContexts() {
   }
 }
 
+int CCanvas::pendingTiles() { return (nullptr != map) ? map->pendingTiles() : 0; }
+
+int CCanvas::failedTiles() { return (nullptr != map) ? map->failedTiles() : 0; }
+
 void CCanvas::print(QPainter& p, const QRectF& area, const QPointF& focus, bool printScale) {
   const QSize newSize(area.size().toSize());
 

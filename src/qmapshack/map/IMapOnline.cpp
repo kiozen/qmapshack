@@ -45,11 +45,22 @@ bool IMapOnline::httpsCheck(const QString& url) {
         tr("This map requires OpenSSL support. However due to legal restrictions in some countries "
            "OpenSSL is not packaged with QMapShack. You can have a look at the "
            "<a href='https://github.com/openssl/openssl/wiki/Binaries'>OpenSSL Wiki</a> "
-           "for binaries. You have to copy libcrypto-3-x64.dll and libssl-3-x64.dll into the QMapShack program directory.");
+           "for binaries. You have to copy libcrypto-3-x64.dll and libssl-3-x64.dll into the QMapShack program "
+           "directory.");
     QMessageBox::critical(CMainWindow::getBestWidgetForParent(), tr("Error..."), msg, QMessageBox::Abort);
     return false;
   }
   return true;
+}
+
+int IMapOnline::pendingTiles() {
+  QMutexLocker<QRecursiveMutex> lock(&mutex);
+  return urlQueue.size() + urlPending.size();
+}
+
+int IMapOnline::failedTiles() {
+  QMutexLocker<QRecursiveMutex> lock(&mutex);
+  return tilesFailed;
 }
 
 void IMapOnline::slotQueueChanged() {
@@ -120,6 +131,7 @@ void IMapOnline::slotRequestFinished(QNetworkReply* reply) {
 
   // debug output any error
   if (reply->error()) {
+    tilesFailed++;
     qDebug() << "Request to" << url << "failed:" << reply->errorString();
   }
 

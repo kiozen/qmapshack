@@ -191,6 +191,12 @@ class CCanvas : public QWidget {
   /// @brief Block until no draw thread is running and the buffers can be rebuilt
   void waitForDrawContexts();
 
+  /// @return Tiles the canvas' maps are still waiting for; 0 when the picture is complete
+  int pendingTiles();
+
+  /// @return Tiles the canvas' maps never got; 0 when the picture is complete
+  int failedTiles();
+
   /**
      @brief Set a single map file to be shown on the canvas
 
