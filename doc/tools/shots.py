@@ -152,13 +152,16 @@ def compose_config(scratch, chapter=None, scenario=None, out=None):
     # session's beside the fixture, the build's under the output directory - so a build re-downloaded
     # every tile the writer had already fetched, and drew an empty map without a network.
     # CMainWindow reads this after main.cpp has set its own root, so this wins.
-    data["Canvas/cachePath"] = str(CACHE_DIR)
+    # as_posix(), never str(): QSettings reads the ini back with backslash as its escape character,
+    # so a Windows path arrives as `D:QtProjects...` or worse - `\x` is a hex escape - and the map
+    # path the application then looks in does not exist. Qt takes forward slashes on every platform.
+    data["Canvas/cachePath"] = CACHE_DIR.as_posix()
 
-    data["Canvas/mapPath"] = str(MAPS_DIR)
+    data["Canvas/mapPath"] = MAPS_DIR.as_posix()
     if DEM_DIR.is_dir():
-        data["Canvas/demPaths"] = str(DEM_DIR)
+        data["Canvas/demPaths"] = DEM_DIR.as_posix()
     if POI_DIR.is_dir():
-        data["Canvas/poiPaths"] = str(POI_DIR)
+        data["Canvas/poiPaths"] = POI_DIR.as_posix()
     config = Path(out) if out else Path(scratch) / "shots.ini"
     write_ini(config, data)
     return config
