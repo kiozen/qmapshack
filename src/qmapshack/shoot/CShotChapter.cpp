@@ -579,7 +579,14 @@ int CShotChapter::shootOne(const QJsonObject& shot, CShotContext& ctx) {
       // is reachable as QTabWidget#0 just like anywhere else.
       QObject* driven = it.key().contains('.') ? resolve(widget, name) : widget;
       if (!driveProperty(driven, property, it.value().toVariant())) {
-        qWarning() << "shoot:" << id << "cannot set" << it.key() << "to" << it.value().toVariant();
+        // What it is instead, because that is the answer: a currentIndex that stays -1 is a tab
+        // widget with no pages, and a widget that is not there at all is a different mistake.
+        if (nullptr == driven) {
+          qWarning() << "shoot:" << id << "has no" << name << "to set" << it.key() << "on";
+        } else {
+          qWarning() << "shoot:" << id << "cannot set" << it.key() << "to" << it.value().toVariant() << "- it is"
+                     << driven->property(property.toLatin1());
+        }
         failures++;
       }
     }
