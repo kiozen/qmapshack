@@ -87,6 +87,12 @@ class CMapDraw : public IDrawContext {
    */
   static void setCacheRoot(const QString& path) { cachePath = path; }
 
+  /// @return Tiles the active maps are still waiting for; 0 when none streams
+  int pendingTiles();
+
+  /// @return Tiles the active maps never got; 0 when none streams
+  int failedTiles();
+
   /**
      @brief Forward messages to CCanvas::reportStatus()
 

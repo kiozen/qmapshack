@@ -682,7 +682,12 @@ void CShotDocMode::tag() {
 
   // The same call the headless run makes, so the picture the writer accepts is the picture the
   // chapter reproduces.
-  CShotChapter::shootOne(shot, *ctx);
+  // Nothing to look at when the picture was not written - a map that never loaded leaves the last
+  // one on disk, and a preview of that is the writer accepting a picture nobody took.
+  if (0 != CShotChapter::shootOne(shot, *ctx)) {
+    report(tr("%1 could not be taken; the log says why. Nothing was changed.").arg(id));
+    return;
+  }
 
   // The picture is written first and thrown away again on Discard: the writer judges the image, not
   // a description of it.
@@ -868,7 +873,12 @@ void CShotDocMode::takeRegion() {
 
   // From the stored definition, not from what is on screen: the scenario is built again from
   // nothing, exactly as the headless run will build it.
-  CShotChapter::shootOne(shot, *ctx);
+  // Nothing to look at when the picture was not written - a map that never loaded leaves the last
+  // one on disk, and a preview of that is the writer accepting a picture nobody took.
+  if (0 != CShotChapter::shootOne(shot, *ctx)) {
+    report(tr("%1 could not be taken; the log says why. Nothing was changed.").arg(id));
+    return;
+  }
 
   if (!confirmResult(id)) {
     QFile::remove(imagePath(id));

@@ -40,12 +40,16 @@ class CShotWriter {
   static void settle(QWidget* w);
 
   /**
-     @brief Spin until the widget renders the same picture twice.
+     @brief Spin until the map has every tile and the widget renders the same picture twice.
 
      The tiles of an online map arrive over the network, so a canvas shot taken as soon as the draw
-     threads are idle is half drawn. Warns and returns when the timeout runs out.
+     threads are idle is half drawn. Rendering the same picture twice is not enough on its own: a
+     canvas waiting for its first tile holds still, so a slow map settles before it has drawn
+     anything at all.
+
+     @return false when the tiles did not all arrive in time; the picture is not one to keep
    */
-  static void settleStable(QWidget* w, int timeoutMs = 20000);
+  static bool settleStable(QWidget* w, int timeoutMs = 20000);
 
   /**
      @brief Polish, size and render a widget with no screen involved.

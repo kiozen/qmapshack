@@ -84,25 +84,45 @@ void CShotWriter::settle(QWidget* w) {
   }
 }
 
-void CShotWriter::settleStable(QWidget* w, int timeoutMs) {
+bool CShotWriter::settleStable(QWidget* w, int timeoutMs) {
   if (nullptr == w) {
-    return;
+    return true;
   }
   // Wait for events rather than spinning on them: what this waits for arrives over the network.
   constexpr int kStepMs = 250;
+
+  QList<CCanvas*> canvases = w->findChildren<CCanvas*>();
+  if (CCanvas* self = qobject_cast<CCanvas*>(w); nullptr != self) {
+    canvases << self;
+  }
 
   QElapsedTimer timer;
   timer.start();
   QImage last;
   while (timer.elapsed() < timeoutMs) {
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents, kStepMs);
+
+    int pending = 0;
+    int failed = 0;
+    for (CCanvas* canvas : canvases) {
+      pending += canvas->pendingTiles();
+      failed += canvas->failedTiles();
+    }
+
     const QImage& now = renderAtDpr1(w);
-    if (now == last) {
-      return;
+    if (0 == pending && now == last) {
+      // A tile the server never delivered leaves the queue like a delivered one, so an unreachable
+      // map settles at nothing outstanding - with a hole where the map belongs.
+      if (0 != failed) {
+        qWarning() << "shoot:" << failed << "tiles never arrived; the map in this picture is incomplete";
+        return false;
+      }
+      return true;
     }
     last = now;
   }
-  qWarning() << "shoot: still changing after" << timeoutMs << "ms; is the map reachable?";
+  qWarning() << "shoot: the map still had tiles outstanding after" << timeoutMs << "ms; is it reachable?";
+  return false;
 }
 
 QImage CShotWriter::render(QWidget* w, const QSize& size) {
@@ -125,7 +145,11 @@ QImage CShotWriter::render(QWidget* w, const QSize& size) {
   // resize above starts a fresh load for the new size. Nothing else in a picture changes on its
   // own, so only a widget that is or holds a canvas pays for the wait.
   if (nullptr != qobject_cast<CCanvas*>(w) || nullptr != w->findChild<CCanvas*>()) {
-    settleStable(w);
+    // No picture at all rather than one with half a map in it: the good image on disk stays where
+    // it is and the run reports a failure, instead of a mapless picture being committed.
+    if (!settleStable(w)) {
+      return {};
+    }
   }
 
   return renderAtDpr1(w);

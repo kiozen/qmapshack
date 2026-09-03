@@ -111,6 +111,13 @@ class IMap : public IDrawObject {
 
   const QString& getCachePath() const { return cachePath; }
 
+  /// @return Tiles this map is still waiting for; 0 for one that does not stream
+  virtual int pendingTiles() { return 0; }
+
+  /// @return Tiles that came back an error since the application started; 0 for one that does not
+  /// stream. A failed tile leaves the pending list like any other, so waiting alone cannot see it.
+  virtual int failedTiles() { return 0; }
+
   qint32 getCacheSize() const { return cacheSizeMB; }
 
   qint32 getCacheExpiration() const { return cacheExpiration; }
