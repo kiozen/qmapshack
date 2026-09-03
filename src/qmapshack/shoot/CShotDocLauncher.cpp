@@ -38,6 +38,7 @@
 #include <QStyle>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <cstdlib>
 
 #include "setup/CAppOpts.h"
 #include "shoot/CShotChapter.h"
@@ -46,6 +47,9 @@
 namespace {
 /// How long a state process is given to end on its own before it is killed
 const int kStopTimeoutMs = 5000;
+
+/// How long a session gets to end by itself before it is ended for it
+const int kEndTimeoutMs = 2000;
 
 /// @return Content hash of a file, or an empty array when it does not exist
 QByteArray digest(const QString& path) {
@@ -103,7 +107,9 @@ void CShotDocLauncher::start() {
       command("stop");
       return;
     }
-    // A recording is always performed from the base, so what it stores is a whole state.
+    // A recording is always performed from the base, so what it stores is a whole state. Said
+    // before it happens: the application restarting is otherwise a scenario switch nobody asked for.
+    refreshPanel(tr("A recording is always made from the base, so the application starts again there."));
     enterScenario(QString(), true);
   });
   panel->setRenameHandler([this]() { renameScenario(); });
@@ -114,8 +120,7 @@ void CShotDocLauncher::start() {
   panel->setRetakeHandler([this]() { retakeChapter(); });
   panel->setClosedHandler([this]() {
     qInfo() << "doc: the panel was closed; ending the session";
-    stopState();
-    qApp->exit(0);
+    endSession();
   });
   panel->setStoreLayoutHandler([this]() {
     // The state that is running is the authority: the settings being stored are its own, so the
@@ -171,6 +176,27 @@ void CShotDocLauncher::start() {
 
   refreshPanel();
   enterScenario(QString());
+}
+
+void CShotDocLauncher::endSession() {
+  if (ending) {
+    return;
+  }
+  ending = true;
+  stopState();
+
+  // The windows first: a modal box that stays up holds an event loop of its own, and the exit
+  // below would end that one instead of the session.
+  QApplication::closeAllWindows();
+  qApp->exit(0);
+
+  // And if something still holds a loop after that, the writer is owed their shell back more than
+  // this process is owed a tidy end. Nothing here is worth writing on the way out: the state
+  // process is gone and everything a session produces was written when it was produced.
+  QTimer::singleShot(kEndTimeoutMs, qApp, []() {
+    qWarning() << "doc: the session did not end by itself";
+    ::exit(0);
+  });
 }
 
 QString CShotDocLauncher::channelName() const {
@@ -288,14 +314,27 @@ void CShotDocLauncher::enterScenario(const QString& scenario, bool startRecordin
   state->setProcessChannelMode(QProcess::ForwardedChannels);
   recordOnStart = startRecording;
   const QStringList& args = childArguments(config, scenario);
-  connect(state, &QProcess::finished, this, [this](int, QProcess::ExitStatus) {
+  connect(state, &QProcess::finished, this, [this](int code, QProcess::ExitStatus how) {
     channel = nullptr;
     recording = false;
-    // Not our doing, so the writer closed the application window. That ends the session: the panel
-    // is a window onto a state, and there is none any more.
     if (!killing) {
+      // A window the writer closed exits cleanly. Anything else is the application dying, and the
+      // panel outlives it: the writer is told what happened and picks a scenario to start again,
+      // instead of the whole session going away with nothing said.
+      if (QProcess::NormalExit != how || 0 != code) {
+        qWarning() << "doc: the state died, exit code" << code;
+        state->deleteLater();
+        state = nullptr;
+        panel->setBusy(false, QString());
+        reportFailure(tr("The application ended unexpectedly, exit code %1. Nothing was stored. Pick a "
+                         "scenario to start it again.")
+                          .arg(code));
+        return;
+      }
+      // The writer closed the application window. That ends the session: the panel is a window onto
+      // a state, and there is none any more.
       qInfo() << "doc: the state ended on its own; ending the session";
-      qApp->exit(0);
+      endSession();
       return;
     }
     if (nullptr != panel) {

@@ -63,6 +63,16 @@ class CShotDocLauncher : public QObject {
   /// @brief End the running state process and wait for it to be gone
   void stopState();
 
+  /**
+     @brief End the whole session: the state process, the panel, this process.
+
+     Not qApp->exit() on its own. exit() ends the innermost event loop, and every modal box the
+     panel puts up runs one of its own, so a session ended from a socket or a process signal while
+     one is open left a process behind with no window - and the shell it was started from never
+     came back.
+   */
+  void endSession();
+
   /// @brief Ask for the recording's name and tell the state process what to do with it
   void nameRecording(const QString& suggestion);
 
@@ -132,6 +142,9 @@ class CShotDocLauncher : public QObject {
   /// True while we are the reason the state process is going. A state that ends without it is the
   /// writer closing the application, which ends the session.
   bool killing = false;
+
+  /// Set once the session is on its way out; nothing is worth answering after that
+  bool ending = false;
 
   /// Asked for before the state process is up, so it is sent as soon as it connects
   bool recordOnStart = false;
