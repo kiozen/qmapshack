@@ -1021,17 +1021,14 @@ under `-DQMS_DOC_MODE=ON`; `main.cpp` compiles its two call sites out with the s
 `--shoot` and `--doc` are inert in a user's binary. A doc run needs the source tree and a build
 tree configured with it.
 
-`shot-input-replay-plan.md` replaces the scenario recorder's state differ with recorded input. Its
-*Measured* section is the evidence, taken on Linux and Windows with a throwaway probe that has
-since been deleted; do not re-derive those facts, and do not doubt them without a new measurement.
+`QMS-1217-documentation-images.md` is the one plan. §1-§8 are the design, §9 the evidence - measured
+on this checkout, do not re-derive it and do not doubt it without a new measurement - §10 what the
+demo does not do, §11 the sub-tickets the feature branch is built from. It replaces the three
+layered plans that came before it.
 
-`QMS-1217-doc-mode-two-process-plan.md` replaces section 7 of the plan below: documentation mode is
-a launcher process and a state process, not one process that restarts itself.
-
-`QMS-1217-screenshot-framework-plan.md` (documentation images) is implemented on branch
-`QMS-1217_demo` as a **throwaway demo** and describes what is built. §7 is the design, §8 what is
-missing. `shots.py doc <chapter>` is the writer's session, `shots.py chapter|build` the headless
-replay. Everything but the exposure catalog is data:
+What is on `QMS-1217_demo` is a **throwaway demo** of that design. `shots.py doc <chapter>` is the
+writer's session, `shots.py chapter|build` the headless replay. Everything but the exposure catalog
+is data:
 
 ```
 doc/pages/<chapter>.md            what says a picture exists - the only source of shot names
@@ -1145,6 +1142,33 @@ doc/shots/fixture/shots.ini       the base a chapter opens on
   (`CWksItemDelegate::button_e`, `buttonAt()`, `pressButton()`). The row buttons are painted, not
   widgets, so the delegate's `sigButtonPressed` is the only thing that can report one; a replay
   reaches `pressButton()` directly rather than a point.
+- **A recorded click is replayed as a click.** A geographic point reaches the canvas as a move, a
+  press and a release, so whichever mouse delegate the scenario has put there answers it - normal,
+  range, edit, ruler - and a mode nobody has taught the framework about replays like every other.
+  `CMouseAdapter` counts a move only past `minimalMouseMovingDistance`, and `CMouseNormal::draw()`
+  reads the item under the cursor out of the adapter's last position, so the point is approached
+  from `kApproachPixels` away and the canvas repaints before the button goes down. The recorded
+  `item` has to still be under the point, the rule `hit` follows everywhere else.
+- **A replayed move is sent as an event (`moveMouseTo()`), never `QTest::mouseMove()`.** On a
+  widget with no button down that one only calls `QCursor::setPos()` and leaves the move to the
+  window system (qtestmouse.h, Qt 6.10.2). The offscreen platform answers it at once and X11 does
+  not, so anything that needs the hover before the click - a track's screen options, and every
+  scenario that goes through `toolRange` into range mode - worked in a headless build and not in
+  the writer's own session.
+- **A replay starts from nothing, not from what is on screen.** `CShotRecorder::replay()` calls
+  `clear()` before its first step, because a step is not idempotent: a second click on a selected
+  range takes the range away again. Documentation mode is where that bites - it holds a state up
+  for the writer and `shootOne()` then builds the same scenario again to photograph it.
+- **`clear()` puts the canvas' mouse delegate back** (`CCanvas::resetMouse()`, what a right button
+  click does). Which delegate is there is state a scenario left behind, and it is
+  `CMouseRangeTrk`'s destructor that returns the track to `eModeNormal` and lets go of its mouse
+  focus - so the deferred delete has to be asked for
+  (`sendPostedEvents(nullptr, QEvent::DeferredDelete)`). `processEvents()` does not deliver
+  `DeferredDelete`; the event loop that posted it does, on its way out, and `settle()` never leaves
+  one.
+- **An `IScrOpt` overlay is a child widget of the canvas, not the map.** Only `CCanvas` itself is a
+  geographic point; a press on `toolRange` or any other screen-option button is an ordinary
+  addressed widget press, and recording it as a place on the map loses the button.
 - **`IPlot` sets no `objectName`.** The per-instance tag the track compares its mouse-focus owner
   against is `IPlot::ownerTag`; making it the objectName too made a plot's address depend on how
   many plots were built before it. A plot placed by a `.ui` keeps its uic name; one built in code is

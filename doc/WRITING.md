@@ -155,14 +155,30 @@ A recording always starts from the base, so what you record is complete in itsel
 | zoomed or moved the map | the area you ended up looking at |
 | set maps, elevation data, POIs, units, fonts | those, in the scenario's own settings file |
 | selected an item, opened a project | that item, by name |
-| clicked an item on the map | where you clicked, and what was there |
-| changed a box, tab, tick or slider | that control and its value |
+| clicked something on the map | the place on the map, and what was standing there |
+| clicked a button, a tab, a row | that button, that tab, that row |
+| picked an entry from a menu | that entry, by what it does — never by the words on it |
+| opened a right-click menu | that menu, on the thing you opened it on |
+| clicked a graph | the point on the graph — a distance along the track, or a time |
+| clicked an icon in a grid | that icon, by name |
+| changed a box, tick or slider | that control and its value |
+| typed into a field | what you typed |
 
-Nothing is kept as pixels or screen positions. That is why a recording still works after the
-program is rebuilt or on another computer.
+**Nothing is kept as a place on your screen.** A click is kept as the thing it landed on, plus
+where inside that thing you clicked. When the picture is taken again, QMapShack looks for the same
+thing at that place; if it is not there any more, it stops and says so instead of photographing
+something else.
 
-It keeps nothing that leaves nothing behind: a button press that just did something, a tooltip, a
-hover highlight, a half-finished drag. Stop after only those and it tells you it recorded nothing.
+That is why a recording still works after the program is rebuilt, on another computer, and with the
+window at another size.
+
+**What it does not keep:** a hover highlight, a tooltip, a half-finished drag, and a click on
+something that does nothing by itself — a splitter, a scroll bar, the strip of empty space under
+the last row. Stop after only those and it tells you it recorded nothing.
+
+Nothing is ever kept *wrongly*: a control QMapShack has not been taught about records nothing at
+all. You find out because the picture does not come out, never because the recording quietly did
+something else.
 
 ### Changing one
 
@@ -179,9 +195,11 @@ Changing a picture's **Taken in** box does the same to that one picture. Both as
 what will be lost. The reason: a widget you pointed at and a rectangle you dragged mean something
 else in another state.
 
-Units, fonts and window size are read when QMapShack starts. A picture you take now uses what is
-on screen, not what the scenario has stored. The panel says when they differ; **Save config**
-brings them in line.
+The application window always starts fresh in the scenario you picked, with that scenario's own
+settings, so what you see is what a later build will see. But if you then change something —
+the units, a map, the window size — the next picture you take uses what is on screen and not what
+the scenario has stored. The panel tells you so right after the picture. **Save config** writes
+what you have now into the scenario and brings the two back in line.
 
 ---
 
@@ -272,7 +290,7 @@ suit your page, say so to whoever maintains the documentation setup.
 - animations — the key takes stills only
 - elevation data — no DEM in the example data
 - adding your own example data to a chapter
-- recording anything that leaves no state behind
+- recording a hover, a tooltip or a drag
 - a second set of pictures for dark mode — the pictures are light, and only light
 - other languages — the pictures are English, and only English
 
