@@ -62,7 +62,6 @@
 #include "gis/proj_x.h"
 #include "gis/trk/CGisItemTrk.h"
 #include "mouse/CMouseNormal.h"
-#include "mouse/IScrOpt.h"
 #include "plot/IPlot.h"
 #include "shoot/CShotChapter.h"
 #include "shoot/CShotContext.h"
@@ -73,6 +72,9 @@
 namespace {
 /// A press and release further apart than this moved the map; it was no click on what was under it
 constexpr int kDragSlack = 4;
+
+/// How far a replayed click approaches its point from, so the adapter takes the move as one
+constexpr int kApproachPixels = 40;
 
 /**
    @brief Is the widget inside the other one?
@@ -90,23 +92,18 @@ bool isWithin(const QWidget* ancestor, const QWidget* widget) {
 }
 
 /**
-   @brief Are an item's options on screen?
+   @brief Move the mouse over the widget - as an event, never as a pointer warp.
 
-   dynamic_cast over the canvas' own children, not findChild<IScrOpt*>(): IScrOpt has no Q_OBJECT,
-   so qobject_cast would match every QWidget instead of none.
+   `QTest::mouseMove()` on a widget with no button down only calls `QCursor::setPos()` and leaves
+   the move to the window system (qtestmouse.h, Qt 6.10.2). The offscreen platform answers that at
+   once, X11 delivers it whenever it gets round to it and only if the pointer is over the window at
+   all - so a headless build saw the move and the writer's own session did not, and everything that
+   needs the hover before the click worked in the build alone.
  */
-bool optionsShown(CCanvas* canvas) {
-  if (nullptr == canvas) {
-    return false;
-  }
-  const QList<QWidget*>& children = canvas->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly);
-  for (const QWidget* child : children) {
-    const IScrOpt* option = dynamic_cast<const IScrOpt*>(child);
-    if (nullptr != option && option->isVisible()) {
-      return true;
-    }
-  }
-  return false;
+void moveMouseTo(QWidget* widget, const QPoint& pos) {
+  QMouseEvent event(QEvent::MouseMove, QPointF(pos), widget->mapToGlobal(QPointF(pos)), Qt::NoButton, Qt::NoButton,
+                    Qt::NoModifier);
+  QApplication::sendEvent(widget, &event);
 }
 
 /// @brief The central tab widget the canvases are pages of. There is no API for it; walk up.
@@ -131,16 +128,6 @@ T* holding(QWidget* widget) {
   return nullptr;
 }
 
-/// @return The canvas the widget belongs to, or nullptr when it belongs to none
-CCanvas* canvasHolding(QWidget* widget) {
-  for (QWidget* w = widget; nullptr != w; w = w->parentWidget()) {
-    if (CCanvas* canvas = qobject_cast<CCanvas*>(w); nullptr != canvas) {
-      return canvas;
-    }
-  }
-  return nullptr;
-}
-
 /**
    @brief The name path of the one item at this point of the map.
 
@@ -153,7 +140,19 @@ QString itemPathAt(const QPoint& pixel) {
   return (1 == items.size()) ? CShotChapter::itemPathOf(items.first()) : QString();
 }
 
-/// @brief Open an item's screen options at a geographic point, the way a click on it does
+/**
+   @brief Click the map at a geographic point, the way the writer did: approach, press, release.
+
+   Never a delegate's own method. Which delegate is on the canvas is the state the scenario has put
+   it in - normal, range, edit, ruler - and each answers a click its own way, so a replay that names
+   one can only ever reproduce that one. An event reaches whichever is there, and a mouse mode
+   nobody has taught this about replays like every other.
+
+   The move is not politeness: `CMouseAdapter` takes a move as one only past
+   `minimalMouseMovingDistance`, `CMouseNormal::draw()` reads the item under the cursor out of the
+   adapter's last position, and the range delegate wants the move focus the click then fixes. So the
+   point is approached from a few pixels away and the canvas repaints before the button goes down.
+ */
 bool clickOnMap(const QJsonObject& action, CShotContext& ctx) {
   CCanvas* canvas = ctx.canvas();
   if (nullptr == canvas) {
@@ -171,24 +170,23 @@ bool clickOnMap(const QJsonObject& action, CShotContext& ctx) {
   canvas->convertRad2Px(pos);
   const QPoint& pixel = pos.toPoint();
 
+  // What the click landed on when it was recorded has to still be there, the same rule a position
+  // in any other widget follows: a replay that would hit something else fails instead of
+  // photographing another state.
   const QString& path = action["item"].toString();
-  IGisItem* item = dynamic_cast<IGisItem*>(CShotChapter::resolveItemPath(ctx.wksList(), path));
-  if (nullptr == item) {
-    // The recording names the item, but what the click means is "whatever is at this place".
-    QList<IGisItem*> items;
-    CGisWorkspace::self().getItemsByPos(QPointF(pixel), items);
-    item = items.value(0, nullptr);
-  }
-  if (nullptr == item) {
-    qWarning() << "shoot: nothing is on the map at" << path;
+  if (!path.isEmpty() && itemPathAt(pixel) != path) {
+    qWarning() << "shoot: the scenario clicks on" << path << "and finds" << itemPathAt(pixel);
     return false;
   }
 
-  CMouseNormal* mouse = canvas->findChild<CMouseNormal*>();
-  if (nullptr == mouse || !mouse->showScreenOption(pixel, item)) {
-    qWarning() << "shoot:" << path << "has nothing to show at that point";
-    return false;
-  }
+  const int approachY = (pixel.y() > kApproachPixels) ? pixel.y() - kApproachPixels : pixel.y() + kApproachPixels;
+  moveMouseTo(canvas, QPoint(pixel.x(), approachY));
+  moveMouseTo(canvas, pixel);
+  canvas->update();
+  CShotWriter::settle(canvas);
+
+  QTest::mouseClick(canvas, Qt::LeftButton, {}, pixel);
+  CShotWriter::settle(canvas);
   return true;
 }
 // --- synthesized input ---------------------------------------------------------------------------
@@ -750,18 +748,6 @@ QJsonObject CShotRecorder::layoutOf(CShotContext& ctx) {
   return action;
 }
 
-bool CShotRecorder::isIgnored(const QWidget* widget) const {
-  if (nullptr == ignored) {
-    return false;
-  }
-  for (const QWidget* w = widget; nullptr != w; w = w->parentWidget()) {
-    if (w == ignored) {
-      return true;
-    }
-  }
-  return false;
-}
-
 QString CShotRecorder::selectionNow() const {
   CGisListWks* list = ctx.wksList();
   return (nullptr == list) ? QString() : CShotChapter::itemPathOf(list->currentItem());
@@ -793,9 +779,6 @@ QList<CShotRecorder::input_t> CShotRecorder::inputsOf() const {
   }
 
   const auto add = [&](QWidget* widget, const char* property) {
-    if (isIgnored(widget)) {
-      return;
-    }
     const QString& address = CShotChapter::addressOf(main, widget);
     if (address.isEmpty()) {
       return;
@@ -921,19 +904,19 @@ void CShotRecorder::captureChanges() {
   // replay and a click's geographic point lands where the writer made it.
 
   // Last, so the map is where the click was made before the click is made again.
-  if (pressedOnCanvas && !pressItem.isEmpty()) {
-    if (optionsShown(ctx.canvas())) {
-      QJsonObject action;
-      action["do"] = "click";
+  if (pressedOnCanvas) {
+    QJsonObject action;
+    action["do"] = "click";
+    // What the click landed on, when that is one thing: the check that a replay reproduces the same
+    // state. A click near an item is not a click on it - isCloseTo() answers within 20 px and the
+    // range delegate takes one 200 px away - so a point with nothing single under it is a step all
+    // the same, and the point is all of it.
+    if (!pressItem.isEmpty()) {
       action["item"] = pressItem;
-      action["lat"] = pressCoord.y();
-      action["lon"] = pressCoord.x();
-      actions.append(action);
-    } else {
-      // The second click on an item takes its options away again. The writer ended with none, so
-      // the click that opened them is not part of the scenario either.
-      forgetClickOn(pressItem);
     }
+    action["lat"] = pressCoord.y();
+    action["lon"] = pressCoord.x();
+    actions.append(action);
   }
   pressedOnCanvas = false;
   pressItem.clear();
@@ -946,16 +929,6 @@ void CShotRecorder::captureChanges() {
   pressWasDouble = false;
 
   snapshot();
-}
-
-void CShotRecorder::forgetClickOn(const QString& item) {
-  for (qsizetype i = actions.size() - 1; i >= 0; i--) {
-    const QJsonObject& action = actions.at(i).toObject();
-    if ("click" == action["do"].toString() && item == action["item"].toString()) {
-      actions.removeAt(i);
-      return;
-    }
-  }
 }
 
 bool CShotRecorder::recordNamedSurface(QWidget* widget) {
@@ -1005,12 +978,13 @@ bool CShotRecorder::recordNamedSurface(QWidget* widget) {
 
 void CShotRecorder::recordPress(bool twice) {
   QWidget* widget = pressWidget;
-  if (nullptr == widget || isIgnored(widget)) {
+  if (nullptr == widget) {
     return;
   }
   // The canvas has a vocabulary of its own - a geographic point - and the workspace list is what
-  // the selection diff is about. Neither wants a position.
-  if (nullptr != canvasHolding(widget) || nullptr != qobject_cast<QMenu*>(widget)) {
+  // the selection diff is about. Neither wants a position. Only the canvas itself: an IScrOpt
+  // overlay is a child widget of it and its buttons are addressed like any other widget's.
+  if (nullptr != qobject_cast<CCanvas*>(widget) || nullptr != qobject_cast<QMenu*>(widget)) {
     return;
   }
   CGisListWks* list = ctx.wksList();
@@ -1106,7 +1080,7 @@ bool CShotRecorder::eventFilter(QObject* watched, QEvent* event) {
   if (QEvent::ContextMenu == type) {
     QWidget* widget = qobject_cast<QWidget*>(watched);
     const QContextMenuEvent* request = static_cast<QContextMenuEvent*>(event);
-    if (nullptr != widget && !isIgnored(widget)) {
+    if (nullptr != widget) {
       recordContextMenu(widget, request->pos());
     }
     return QObject::eventFilter(watched, event);
@@ -1118,7 +1092,7 @@ bool CShotRecorder::eventFilter(QObject* watched, QEvent* event) {
 
   QWidget* widget = qobject_cast<QWidget*>(watched);
   const QMouseEvent* mouse = static_cast<QMouseEvent*>(event);
-  if (nullptr == widget || isIgnored(widget) || Qt::LeftButton != mouse->button()) {
+  if (nullptr == widget || Qt::LeftButton != mouse->button()) {
     return QObject::eventFilter(watched, event);
   }
 
@@ -1133,7 +1107,9 @@ bool CShotRecorder::eventFilter(QObject* watched, QEvent* event) {
     return QObject::eventFilter(watched, event);
   }
 
-  CCanvas* canvas = canvasHolding(widget);
+  // The map is the canvas widget itself. An IScrOpt overlay is a child of it, so a press on one of
+  // its buttons is a widget press and not a place on the map.
+  CCanvas* canvas = qobject_cast<CCanvas*>(widget);
   if (QEvent::MouseButtonPress == type) {
     pressWidget = widget;
     pressPos = mouse->position().toPoint();
@@ -1173,6 +1149,11 @@ bool CShotRecorder::eventFilter(QObject* watched, QEvent* event) {
 }
 
 int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx, const std::function<void()>& whenReady) {
+  // From nothing, whatever the application is showing: a replay is not a difference. Documentation
+  // mode holds a state up for the writer and then builds the same scenario again to photograph it,
+  // and a step is not idempotent - a second click on a selected range takes the range away.
+  clear(actions, ctx);
+
   // Steps are scheduled, never called one after another. A step may enter a modal dialog, a popup
   // menu or a nested progress loop, and the event loop running inside it delivers the step after
   // it - so the rest of the scenario still happens. A `for` loop sits inside exec() until somebody
@@ -1245,6 +1226,17 @@ void CShotRecorder::clear(const QJsonArray& actions, CShotContext& ctx) {
   if (CMouseNormal* mouse = canvas->findChild<CMouseNormal*>(); nullptr != mouse) {
     mouse->clearScreenOption();
   }
+
+  // Which delegate is on the canvas is state a scenario left there - range, edit, ruler - and it is
+  // what a right button click takes back. The settle is not optional: the delegate is deleted on
+  // the next turn of the loop, and it is `CMouseRangeTrk`'s destructor that returns the track to
+  // eModeNormal and lets go of its mouse focus.
+  canvas->resetMouse();
+  // Asked for, never waited for: the delegate goes through deleteLater(), and processEvents() does
+  // not deliver DeferredDelete - the event loop that posted it does, on its way out, and settle()
+  // never leaves one.
+  QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+  CShotWriter::settle(canvas);
 
   // Selecting a workspace item puts a hint on every canvas telling the user to click the map. It is
   // the selection's leftover, not the next picture's.

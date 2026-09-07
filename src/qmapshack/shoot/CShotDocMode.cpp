@@ -298,6 +298,10 @@ CShotDocMode::CShotDocMode(const QDir& repo, const QString& chapter, const QStri
       repo(repo) {
   writer = new CShotWriter(QDir(repo.absoluteFilePath("doc/images")), "en");
   ctx = new CShotContext(*writer, "en");
+  // The state a scenario builds stands after the picture: this process exists to show the writer
+  // that state and is thrown away with it. A build clears instead, so one shot leaves nothing for
+  // the next. Safe because a replay clears before its first step whatever it finds.
+  ctx->setHold(true);
   recorder = new CShotRecorder(*ctx, this);
   qApp->installEventFilter(this);
 }
@@ -1003,7 +1007,7 @@ QString CShotDocMode::driftWarning(const QString& scenario) const {
     return {};
   }
   return " " + tr("The settings on screen differ from %1's in %2 places, so the build will not "
-                  "produce this picture. Press Update, or set them back.")
+                  "produce this picture. Press Save config, or set them back.")
                    .arg(scenario)
                    .arg(drifted);
 }

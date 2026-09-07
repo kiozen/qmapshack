@@ -80,9 +80,6 @@ class CShotRecorder : public QObject {
 
   qsizetype steps() const { return actions.size(); }
 
-  /// @brief Never record what the writer does on the documentation panel itself
-  void setIgnored(QWidget* widget) { ignored = widget; }
-
   /**
      @brief Put the application into the state a recording describes.
 
@@ -99,10 +96,12 @@ class CShotRecorder : public QObject {
   static int replay(const QJsonArray& actions, CShotContext& ctx, const std::function<void()>& whenReady = {});
 
   /**
-     @brief Take back what a replay left on screen.
+     @brief Take back what a replay left on screen: the screen options, the canvas' mouse mode, a
+            track's mouse focus, the hint a selection puts on the map.
 
      A build takes one picture after another in one application, so a scenario that leaves the
-     screen options of an item standing would put them in the next chapter's picture too.
+     screen options of an item standing would put them in the next chapter's picture too. `replay()`
+     calls it before it starts, so a scenario is built from nothing and never on top of itself.
    */
   static void clear(const QJsonArray& actions, CShotContext& ctx);
 
@@ -158,12 +157,6 @@ class CShotRecorder : public QObject {
   /// @return Every input of the main window that a shot can drive
   QList<input_t> inputsOf() const;
 
-  /// @return true when the widget belongs to the panel, which is not the application
-  bool isIgnored(const QWidget* widget) const;
-
-  /// @brief Drop the click that opened this item's options, because a later one closed them again
-  void forgetClickOn(const QString& item);
-
   /**
      @brief Record the press itself, for a click the diff had nothing to say about.
 
@@ -206,7 +199,6 @@ class CShotRecorder : public QObject {
   bool recording = false;
   /// The capture runs from a queued call, so the widget has already handled the click it answers
   bool capturePending = false;
-  QWidget* ignored = nullptr;
 
   QString lastSelection;
   QSet<QString> lastExpanded;

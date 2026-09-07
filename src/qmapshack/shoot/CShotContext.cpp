@@ -91,37 +91,11 @@ QImage CShotContext::cropped(const QImage& img) {
   return img.copy(crop);
 }
 
-void CShotContext::noteArea(const QWidget* w, const QSize& size) {
-  const CMainWindow* main = mainWindow();
-  if (nullptr == w || nullptr == main) {
-    lastArea_ = QRect();
-    return;
-  }
-  if (w == main) {
-    lastArea_ = QRect(QPoint(), size);
-    return;
-  }
-  // Only a widget of the main window has a place in it. A dialog is a window of its own, and a
-  // rectangle dragged over the main window says nothing about it.
-  for (const QWidget* up = w; nullptr != up; up = up->parentWidget()) {
-    if (up == main) {
-      lastArea_ = QRect(w->mapTo(main, QPoint()), size);
-      return;
-    }
-  }
-  lastArea_ = QRect();
-}
-
 void CShotContext::shot(QWidget* w, const QSize& size, const QString& variant) {
-  const QImage& img = CShotWriter::render(w, size);
-  noteArea(w, img.size());
-  writer.write(cropped(img), stemFor(variant));
+  writer.write(cropped(CShotWriter::render(w, size)), stemFor(variant));
 }
 
-void CShotContext::shot(const QImage& img, const QString& variant) {
-  lastArea_ = QRect();
-  writer.write(cropped(img), stemFor(variant));
-}
+void CShotContext::shot(const QImage& img, const QString& variant) { writer.write(cropped(img), stemFor(variant)); }
 
 void CShotContext::frame(QWidget* w, const QSize& size) { frame(CShotWriter::render(w, size)); }
 

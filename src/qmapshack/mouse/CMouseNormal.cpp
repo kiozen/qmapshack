@@ -225,16 +225,6 @@ bool CMouseNormal::setScreenOption(const QPoint& pt, IGisItem* item) {
   return !screenItemOption.isNull();
 }
 
-bool CMouseNormal::showScreenOption(const QPoint& pt, IGisItem* item) {
-  if (nullptr == item || !setScreenOption(pt, item)) {
-    return false;
-  }
-  // The state draw() paints the bubble in.
-  stateItemSel = eStateShowItemOptions;
-  canvas->update();
-  return true;
-}
-
 void CMouseNormal::clearScreenOption() { resetState(); }
 
 void CMouseNormal::draw(QPainter& p, CCanvas::redraw_e needsRedraw, const QRect& rect) {

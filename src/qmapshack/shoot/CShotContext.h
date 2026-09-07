@@ -116,9 +116,6 @@ class CShotContext {
   void setHold(bool yes) { hold_ = yes; }
   bool holding() const { return hold_; }
 
-  /// @return Where the last emitted image sits in the main window, empty when it was no widget of it
-  const QRect& lastArea() const { return lastArea_; }
-
   /**
      @brief Emit one still.
 
@@ -139,8 +136,6 @@ class CShotContext {
   QImage cropped(const QImage& img);
 
   /// @brief Remember where @p w's picture sits in the main window, so a rectangle dragged over the
-  ///        window can be turned into one of the picture
-  void noteArea(const QWidget* w, const QSize& size);
 
   CShotWriter& writer;
   QString lang_;
@@ -150,7 +145,6 @@ class CShotContext {
   QRect crop;
   bool cropMiss = false;
   bool hold_ = false;
-  QRect lastArea_;
 
   IGisProject* project_ = nullptr;
   CGisItemTrk* trk_ = nullptr;

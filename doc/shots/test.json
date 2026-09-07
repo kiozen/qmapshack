@@ -36,6 +36,62 @@
                 "widget": "tabWidget"
             }
         ],
+        "track-range": [
+            {
+                "do": "layout",
+                "state": "AAAA/wAAAAD9AAAAAgAAAAAAAAEtAAACk/wCAAAAA/wAAAA8AAABRgAAAQABAAAa+gAAAAABAAAAAvsAAAAaAGQAbwBjAGsAVwBvAHIAawBzAHAAYQBjAGUBAAAAAAAAARUAAAB9AP////sAAAAOAGQAbwBjAGsAUgB0AGUBAAAAAP////8AAAEtAP////wAAAGIAAABRwAAAN0BAAAa+gAAAAIBAAAAA/sAAAAQAGQAbwBjAGsATQBhAHAAcwEAAAAA/////wAAAJAA////+wAAAA4AZABvAGMAawBEAGUAbQEAAAAAAAABFQAAAJsA////+wAAABgAZABvAGMAawBEAGEAdABhAGIAYQBzAGUBAAAAAP////8AAACaAP////sAAAAOAGQAbwBjAGsAUABvAGkAAAAB/gAAANsAAAAyAP///wAAAAEAAAFmAAACn/wCAAAAAfsAAAAYAGQAbwBjAGsAUgBlAGEAbAB0AGkAbQBlAAAAADoAAAKfAAAAjAD///8AAAMsAAACkwAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAIAAAABAAAADgB0AG8AbwBsAEIAYQByAQAAAAD/////AAAAAAAAAAA=",
+                "tab": 0
+            },
+            {
+                "do": "view",
+                "lat": 47.5,
+                "lon": 11.009916666666665,
+                "zoom": 11
+            },
+            {
+                "do": "expand",
+                "item": "Shoot Demo"
+            },
+            {
+                "do": "select",
+                "item": "Shoot Demo/trk:Demo Track"
+            },
+            {
+                "do": "click",
+                "lat": 47.499978758740355,
+                "lon": 10.994070385054796
+            },
+            {
+                "do": "click",
+                "item": "Shoot Demo/trk:Demo Track",
+                "lat": 47.50486402213692,
+                "lon": 11.008596143199009
+            },
+            {
+                "at": [
+                    0.5416666666666666,
+                    0.5652173913043478
+                ],
+                "do": "click",
+                "hit": "toolRange",
+                "widget": "toolRange"
+            },
+            {
+                "do": "click",
+                "lat": 47.4990441348091,
+                "lon": 10.993064271936582
+            },
+            {
+                "do": "click",
+                "lat": 47.507072861547876,
+                "lon": 11.007149855591576
+            },
+            {
+                "do": "click",
+                "lat": 47.501975399581454,
+                "lon": 11.009790902526888
+            }
+        ],
         "track-screen-option": [
             {
                 "do": "layout",
@@ -134,6 +190,18 @@
             "exposure": "EnergyCyclingDialog",
             "id": "test/track-energy",
             "note": "Cycling energy and power parameters"
+        },
+        {
+            "id": "test/track-range",
+            "scenario": "track-range",
+            "set": {
+                "currentIndex": 0
+            },
+            "size": [
+                1119,
+                741
+            ],
+            "widget": "tabWidget"
         }
     ]
 }

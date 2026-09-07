@@ -167,8 +167,10 @@ QString CShotChapter::addressOf(const QWidget* main, const QWidget* widget) {
     return {};
   }
 
-  // A name the .ui file gave it, and unique enough that findChild lands on this very widget.
-  if (!widget->objectName().isEmpty() && main->findChild<QWidget*>(widget->objectName()) == widget) {
+  // A name the .ui file gave it, and unique enough that findChild lands on this very widget. With
+  // no root to be unique in - hitAt() naming a widget on its own - the name is the whole address.
+  if (!widget->objectName().isEmpty() &&
+      (nullptr == main || main->findChild<QWidget*>(widget->objectName()) == widget)) {
     return widget->objectName();
   }
 

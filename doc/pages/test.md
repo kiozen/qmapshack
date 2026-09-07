@@ -31,3 +31,6 @@ afasdfsdfqsgfqqs
 asdgasgsf
 
 ![](../images/test/track-energy.png)
+
+
+![](../images/test/track-range.png)
