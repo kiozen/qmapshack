@@ -1041,6 +1041,48 @@ doc/shots/fixture/shots.ini       the base a chapter opens on
   release and stores meaning - a name path, a geographic point, a driven value - plus `layout` and
   `view` (the centre and the zoom level, never a rectangle: `zoomTo()` snaps and everything on the
   map moves) taken whole at Stop. `IShotRecipe` and `RecipesChapter.cpp` are gone; `SHOT_EXPOSE` stays.
+
+### What the recorder costs the application - counted 2026-09-08
+
+The question this answers is whether the framework's knowledge of particular widgets is finite.
+Half of it is; the other half is not, and the unbounded half is the cheap-looking one.
+
+**Finite: the click vocabulary.** A pixel means nothing on a custom-painted surface, so four of them
+are addressed in their own terms - `CCanvas` (a geographic point), `IPlot` (`xValueAt()` /
+`pointOfXValue()`), `CIconGrid` (`iconAt()` / `rectOfIcon()`), `CWksItemDelegate` (`buttonAt()` /
+`pressButton()`). The whole population is nine and every member can be named: six widgets override
+both `paintEvent` and a mouse handler - the three above plus `CDateTimeEditor`, `CPhotoViewer` and
+`CRouterBRouterTilesSelectArea` - and three delegates paint clickable areas, `CWksItemDelegate` plus
+`CDBItemDelegate` and `CMapItemDelegate`, whose overview badge is clicked through `editorEvent()`.
+Two of the five were covered on 2026-09-08 - `CMapItemDelegate` (`activate`, `overview`) and
+`CDBItemDelegate` (`checkState`), each with the same `button_e` / `buttonName()` / `buttonAt()` /
+`pressButton()` / `sigButtonPressed` shape the workspace delegate has. Their rows carry no type tag,
+so a name path is the whole address and the step names its tree (`"tree": "maps"` / `"database"`;
+absent is the workspace). Three are left - `CDateTimeEditor`, `CPhotoViewer`,
+`CRouterBRouterTilesSelectArea` - and the list grows only when somebody writes a new
+custom-painted widget.
+
+**The fixture has no database**, so nothing in a documentation run has a `CDBItemDelegate` row: that
+vocabulary cannot be exercised until `CShotFixture` builds one.
+
+The hooks are small except one: `xValueAt` 6 lines, `pointOfXValue` 7, `iconAt` 4, `rectOfIcon` 11,
+and `CWksItemDelegate::buttonAt` 50 + `pressButton` 73, which have no caller outside `shoot/`.
+
+**Not finite: `objectName` on actions.** A menu entry is addressed by its action's `objectName`, so
+the documentation work added 59 of those - against 90 in the whole application - and every menu
+entry written from now on needs one. Nothing fails when it is forgotten: the recorder warns and
+drops the step, and the picture comes out of a state nobody asked for. This is the tax that does
+not stop, and it is not bounded by the surface count.
+
+**For scale:** the documentation branch's app-side footprint, `shoot/` and the translations
+excluded, is 55 files, +1306/-307 - and most of it is not vocabulary at all, but the bundled fonts a
+headless run needs, the colour-scheme pinning, the command line options, and the cache and database
+paths a run must set before it prunes the user's own.
+
+`shoot/` itself knows eleven application classes, not four: the four above, `CMouseNormal` and
+`CGisItemTrk` in `clear()`, `IWksItem` and `IGisProject` for tree paths, `CCanvas` again in
+`CShotWriter` for the draw threads, and `CMapList` / `CMapDraw` / `CGrid` in the fixture and the
+exposures.
 - **The window's size has exactly one record: the shot's `size`.** `layout` carries `saveState()`
   and the tab, never `saveGeometry()`. `shootOne()` resizes the window before the scenario runs and
   `restoreState()` distributes the dock extents into it - that order is required, because those
@@ -1135,6 +1177,55 @@ doc/shots/fixture/shots.ini       the base a chapter opens on
   a scroll bar, a menu bar and the empty space under the last row are not. It is a whitelist, so a
   widget nobody has taught the recorder about records nothing - recoverable, where a wrong click is
   a picture of the wrong state.
+- **A scenario is never performed on top of itself** (`CShotContext::liveScenario()`). Documentation
+  mode holds one state up for the writer, and both shot paths - `CShotChapter::shootOne()` and
+  `takeRegion()` - used to perform it again to be sure the build starts where the writer does. A
+  step is not idempotent, so the second pass ran the plot's click cycle from `eMouseClick2nd`: the
+  range was cleared and the picture came out of a state nobody had seen. The state process records
+  which scenario it is in; a shot of that one performs nothing and photographs what is there, and
+  `replay()` with no steps clears nothing either. A build sets no live scenario and performs every
+  one, because there the application has just been cleared.
+- **A picture of the running application is taken before any question is asked.** `CWksItemDelegate`
+  draws a project's device-sync, active-project and setup buttons at
+  `IWksItem::getOpacityOfFocusBasedItems()`, which `holdUiFocus()` fades 0 -> 1 only while the
+  option carries `State_HasFocus`, so a row has five buttons for the writer and two in a picture
+  taken without focus. **Focus cannot be restored.** Measured on X11 with Qt 6.10.2: while another
+  window is up the application has no focus at all - `hasFocus()` false, `focusWidget()` and
+  `activeWindow()` null - `setFocus()` on a widget of an inactive window changes nothing, and
+  whether the focus returns when that window closes is the window manager's decision and differed
+  between two runs of the same test. The panel is a second process, so the application window is
+  already inactive whenever the writer is using it. So `tag()` renders every part the writer could
+  mean (`livePartsAt()`) at the key press and writes out the one they pick; the questions come
+  after and cannot change what was taken. `CShotRegionPicker` takes `Qt::NoFocus` and reads Escape
+  through an application filter for the same reason. A `select` step and a shot's own `select` do
+  call `setFocus()` beside `setCurrentItem()` - that is what makes the headless build's rows look
+  like the writer's.
+- **`settle()` ends every running animation of finite length.** An animation runs on real elapsed
+  time, so no number of event loop passes finishes one: the fade above takes 250 ms and a picture
+  caught it at zero. An endless animation (`duration() == -1`) is a pulse with no end to put it at
+  and is left alone.
+- **A row button's signal cannot be a `Qt::UniqueConnection`.** The flag needs a pointer to a member
+  function and refuses a lambda - "unique connections require a pointer to member function of a
+  QObject subclass" - so the connect failed outright and no row button of any tree was ever
+  recorded. `watchRowButtons()` disconnects the signal from itself first instead, which is what the
+  flag was there for: `start()` can run more than once.
+- **A scenario's `layout` carries every splitter's `saveState()` too**, keyed by the same address as
+  everything else, and it is applied last with the tab - a details page's splitters do not exist
+  while the arrangement is restored. `QMainWindow::saveState()` covers dockers and toolbars and
+  nothing inside the central widget, and 32 classes write their own geometry in their destructor,
+  which has not run when a scenario is stored. So the scenario says it itself and depends on no
+  settings file. Without it a details page came back at default proportions, which also inflated
+  its `minimumSizeHint()` and pushed the window 309 px wider than the scenario asked for.
+- **A container input is driven from its own surface, never from what it holds** (`pressDrove()`).
+  `isWithin()` is right for a control made of nothing but its own parts - a combo box owns the list
+  that pops out of it - and wrong for the two inputs that hold foreign content: a `QTabWidget` is
+  driven from its tab bar, a checkable `QGroupBox` from itself. A click in a plot switches the page
+  the plot sits on, and because a press is recorded only when the diff found nothing, that `set`
+  took the click's place and the first of two range clicks was lost.
+- **A capture clears the press it answered.** `stop()` runs one last `captureChanges()` for what the
+  final click produced too late for its own; with the press still standing, that recorded it a
+  second time - two steps on one point, which replays as a range of no length: the screen option
+  appears, the green band does not.
 - **A surface with a vocabulary of its own is never recorded as a position**: the canvas has a
   geographic point, `IPlot` the x axis' own value (`xValueAt()`/`pointOfXValue()` - metres on a
   linear axis, seconds on a time one), `CIconGrid` the `<sym>` name
