@@ -53,6 +53,9 @@ class CShotRunner : public QObject {
   /// @brief Spin the event loop until the main window and its canvases have settled
   void waitForApplication();
 
+  /// @brief Say that the exposure does not exist, and which ones do
+  void reportUnknownExposure(const QString& wanted);
+
   void runInspect();
   void runExplore();
 

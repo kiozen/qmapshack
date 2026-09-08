@@ -152,6 +152,16 @@ void CShotRunner::runChapter() {
   qDebug() << "shoot:" << writer.manifest().size() << "images from" << target << "," << failures_ << "failures";
 }
 
+void CShotRunner::reportUnknownExposure(const QString& wanted) {
+  // With the names that do exist: the id is the whole argument of these two commands, and nothing
+  // else lists them. Sorted, because the registry's order is the order the translation units were
+  // linked in.
+  QStringList known = CShotRegistry::self().exposureNames();
+  known.sort();
+  qWarning().noquote() << "shoot: there is no exposure called" << wanted << "- the ones there are:" << known.join(", ");
+  failures_++;
+}
+
 void CShotRunner::runInspect() {
   QDir previewDir(outDir.absoluteFilePath(kPreviewDir));
   previewDir.mkpath(".");
@@ -162,8 +172,7 @@ void CShotRunner::runInspect() {
 
   QWidget* w = CShotRegistry::self().buildExposure(target, ctx, ctx.parent());
   if (nullptr == w) {
-    qWarning() << "shoot: no exposure named" << target;
-    failures_++;
+    reportUnknownExposure(target);
     return;
   }
   CShotWriter::settle(w);
@@ -218,8 +227,7 @@ void CShotRunner::runExplore() {
 
   QWidget* w = CShotRegistry::self().buildExposure(target, ctx, ctx.parent());
   if (nullptr == w) {
-    qWarning() << "shoot: no exposure named" << target;
-    failures_++;
+    reportUnknownExposure(target);
     return;
   }
 

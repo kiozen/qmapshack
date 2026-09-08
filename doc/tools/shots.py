@@ -291,7 +291,9 @@ def run(binary, out_dir, task, target=None, only=None, verbose=False, chapter=No
     if report is None:
         return {"failures": failures, "said": said}
     path = out_dir / report
-    if failures != 0 and not path.is_file():
+    # Before the file is looked at, and whether or not it is there: a failed run writes nothing, and
+    # the output directory may still hold the report of the run before it.
+    if failures != 0:
         for line in said:
             print(f"  {line}", file=sys.stderr)
         sys.exit(f"{task} did not finish: {failures} failure(s)")

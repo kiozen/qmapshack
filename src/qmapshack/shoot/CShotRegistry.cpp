@@ -38,6 +38,8 @@ bool CShotRegistry::addExposure(const QString& id, const std::type_info* type, c
   return true;
 }
 
+QStringList CShotRegistry::exposureNames() const { return exposures.keys(); }
+
 QString CShotRegistry::exposureDescription(const QString& id) const { return exposures.value(id).description; }
 
 QString CShotRegistry::exposureForWidget(const QWidget* widget) const {

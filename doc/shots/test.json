@@ -36,6 +36,86 @@
                 "widget": "tabWidget"
             }
         ],
+        "demo-track-2": [
+            {
+                "do": "layout",
+                "state": "AAAA/wAAAAD9AAAAAgAAAAAAAAEtAAADI/wCAAAAA/wAAAA8AAABfwAAAQABAAAa+gAAAAABAAAAAvsAAAAaAGQAbwBjAGsAVwBvAHIAawBzAHAAYQBjAGUBAAAAAAAAARUAAAB9AP////sAAAAOAGQAbwBjAGsAUgB0AGUBAAAAAP////8AAAEtAP////wAAAHBAAABngAAAN0BAAAa+gAAAAIBAAAAA/sAAAAQAGQAbwBjAGsATQBhAHAAcwEAAAAA/////wAAAJAA////+wAAAA4AZABvAGMAawBEAGUAbQEAAAAAAAABFQAAAJsA////+wAAABgAZABvAGMAawBEAGEAdABhAGIAYQBzAGUBAAAAAP////8AAACaAP////sAAAAOAGQAbwBjAGsAUABvAGkAAAAB/gAAANsAAAAyAP///wAAAAEAAAFmAAACn/wCAAAAAfsAAAAYAGQAbwBjAGsAUgBlAGEAbAB0AGkAbQBlAAAAADoAAAKfAAAAjAD///8AAAR0AAADIwAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAIAAAABAAAADgB0AG8AbwBsAEIAYQByAQAAAAD/////AAAAAAAAAAA=",
+                "tab": 1
+            },
+            {
+                "do": "view",
+                "lat": 48.99999999998731,
+                "lon": 11.999999999981693,
+                "zoom": 5
+            },
+            {
+                "do": "expand",
+                "item": "Shoot Demo"
+            },
+            {
+                "do": "select",
+                "item": "Shoot Demo/trk:Demo Track"
+            },
+            {
+                "do": "menu",
+                "item": "Shoot Demo/trk:Demo Track",
+                "widget": "treeWks"
+            },
+            {
+                "action": "actionEditDetails",
+                "do": "trigger"
+            },
+            {
+                "do": "click",
+                "widget": "framePlot/CPlotProfile#0",
+                "x": 1195.3731631571598
+            },
+            {
+                "do": "click",
+                "widget": "framePlot/CPlotProfile#0",
+                "x": 2149.3321422468216
+            }
+        ],
+        "scenario": [
+            {
+                "do": "layout",
+                "state": "AAAA/wAAAAD9AAAAAgAAAAAAAAEtAAADI/wCAAAAA/wAAAA8AAABfwAAAQABAAAa+gAAAAABAAAAAvsAAAAaAGQAbwBjAGsAVwBvAHIAawBzAHAAYQBjAGUBAAAAAAAAARUAAAB9AP////sAAAAOAGQAbwBjAGsAUgB0AGUBAAAAAP////8AAAEtAP////wAAAHBAAABngAAAN0BAAAa+gAAAAABAAAAA/sAAAAQAGQAbwBjAGsATQBhAHAAcwEAAAAA/////wAAAJMA////+wAAAA4AZABvAGMAawBEAGUAbQEAAAAAAAABFQAAAJsA////+wAAABgAZABvAGMAawBEAGEAdABhAGIAYQBzAGUBAAAAAP////8AAACaAP////sAAAAOAGQAbwBjAGsAUABvAGkAAAAB/gAAANsAAAAyAP///wAAAAEAAAFmAAACn/wCAAAAAfsAAAAYAGQAbwBjAGsAUgBlAGEAbAB0AGkAbQBlAAAAADoAAAKfAAAAjAD///8AAAMsAAADIwAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAIAAAABAAAADgB0AG8AbwBsAEIAYQByAQAAAAD/////AAAAAAAAAAA=",
+                "tab": 0
+            },
+            {
+                "do": "view",
+                "lat": 48.99999999998731,
+                "lon": 11.999999999981693,
+                "zoom": 5
+            },
+            {
+                "button": "activate",
+                "do": "click",
+                "item": "osm",
+                "tree": "maps"
+            }
+        ],
+        "shoot-demo": [
+            {
+                "do": "layout",
+                "state": "AAAA/wAAAAD9AAAAAgAAAAAAAAEtAAADI/wCAAAAA/wAAAA8AAABfwAAAQABAAAa+gAAAAABAAAAAvsAAAAaAGQAbwBjAGsAVwBvAHIAawBzAHAAYQBjAGUBAAAAAAAAARUAAAB9AP////sAAAAOAGQAbwBjAGsAUgB0AGUBAAAAAP////8AAAEtAP////wAAAHBAAABngAAAN0BAAAa+gAAAAIBAAAAA/sAAAAQAGQAbwBjAGsATQBhAHAAcwEAAAAA/////wAAAJAA////+wAAAA4AZABvAGMAawBEAGUAbQEAAAAAAAABFQAAAJsA////+wAAABgAZABvAGMAawBEAGEAdABhAGIAYQBzAGUBAAAAAP////8AAACaAP////sAAAAOAGQAbwBjAGsAUABvAGkAAAAB/gAAANsAAAAyAP///wAAAAEAAAFmAAACn/wCAAAAAfsAAAAYAGQAbwBjAGsAUgBlAGEAbAB0AGkAbQBlAAAAADoAAAKfAAAAjAD///8AAAMsAAADIwAAAAQAAAAEAAAACAAAAAj8AAAAAQAAAAIAAAABAAAADgB0AG8AbwBsAEIAYQByAQAAAAD/////AAAAAAAAAAA=",
+                "tab": 0
+            },
+            {
+                "do": "view",
+                "lat": 48.99999999998731,
+                "lon": 11.999999999981693,
+                "zoom": 5
+            },
+            {
+                "do": "expand",
+                "item": "Shoot Demo"
+            },
+            {
+                "do": "select",
+                "item": "Shoot Demo"
+            }
+        ],
         "track-range": [
             {
                 "do": "layout",
@@ -202,6 +282,15 @@
                 741
             ],
             "widget": "tabWidget"
+        },
+        {
+            "id": "test/delagte",
+            "scenario": "shoot-demo",
+            "size": [
+                1119,
+                885
+            ],
+            "widget": "treeWks"
         }
     ]
 }
