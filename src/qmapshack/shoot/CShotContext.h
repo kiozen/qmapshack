@@ -117,6 +117,18 @@ class CShotContext {
   bool holding() const { return hold_; }
 
   /**
+     @brief The scenario the application is already in, so nothing performs it a second time.
+
+     Documentation mode holds one state up for the writer, and photographing it used to perform it
+     again on top of itself. A step is not idempotent - a second pair of clicks in a plot takes the
+     range away, a second click on the map's range tool leaves it - so the picture came out of a
+     state the writer never saw. A build sets nothing here and performs every scenario, because
+     there the application has just been cleared.
+   */
+  void setLiveScenario(const QString& name) { liveScenario_ = name; }
+  const QString& liveScenario() const { return liveScenario_; }
+
+  /**
      @brief Emit one still.
 
      @param variant  appended to the recipe id as `<id>-<variant>`, for a recipe emitting several
@@ -145,6 +157,7 @@ class CShotContext {
   QRect crop;
   bool cropMiss = false;
   bool hold_ = false;
+  QString liveScenario_;
 
   IGisProject* project_ = nullptr;
   CGisItemTrk* trk_ = nullptr;

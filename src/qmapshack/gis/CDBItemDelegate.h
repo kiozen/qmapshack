@@ -122,6 +122,47 @@ class CDBItemDelegate : public QStyledItemDelegate {
   bool helpEvent(QHelpEvent* event, QAbstractItemView* view, const QStyleOptionViewItem& opt,
                  const QModelIndex& index) override;
 
+  /**
+     @brief The one thing a database row acts on when it is clicked.
+
+     The button is painted, not a widget, so it has no address; this enum is its vocabulary.
+     buttonName() is what a recorded scenario stores, because the enum's numbers are not a contract.
+   */
+  enum class button_e {
+    eNone,
+    eCheckState,
+  };
+  Q_ENUM(button_e)
+
+  /// @return The stable, untranslated name of a button; empty for eNone
+  static QString buttonName(button_e button);
+
+  /// @return The button of that name, eNone when there is none
+  static button_e buttonByName(const QString& name);
+
+  /// @brief A button of a row and where it sits, in the coordinates the layout was built in
+  struct button_t {
+    button_e button = button_e::eNone;
+    QRect rect;
+  };
+
+  /// @brief Which button the point lands on. A row without one answers eNone.
+  button_t buttonAt(const QStyleOptionViewItem& opt, const IDBItem& item, const QPoint& pos) const;
+
+  /**
+     @brief Act on a row's button.
+
+     The one place a button's effect lives, so a replayed scenario reaches exactly what a click
+     reaches. The caller has already decided which button this is; nothing here hit-tests.
+
+     @return true when the button acted
+   */
+  bool pressButton(button_e button, IDBItem& item);
+
+ signals:
+  /** Emitted when a row's painted button acted, which is the only way one can be reported. */
+  void sigButtonPressed(const QModelIndex& index, CDBItemDelegate::button_e button);
+
  private:
   /** @brief Cast the model index to an IDBItem; returns nullptr if the index is not an IDBItem. */
   IDBItem* indexToItem(const QModelIndex& index) const;

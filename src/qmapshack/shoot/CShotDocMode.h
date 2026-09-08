@@ -23,6 +23,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
+#include <QPointer>
 #include <QRect>
 #include <QSet>
 #include <QSize>
@@ -101,6 +102,17 @@ class CShotDocMode : public QObject {
 
      @return The chosen widget, or nullptr if the writer cancelled
    */
+  /**
+     @brief Every part of the application window the writer could mean, from what they point at
+            outwards, plus the window itself.
+
+     Separate from the question so a picture of each can be taken before one is asked: a question
+     is a window of its own, and while one is up the application has no focus at all.
+
+     @param labels  out: one label per part, in the same order
+   */
+  QList<QWidget*> livePartsAt(CMainWindow* main, QStringList& labels) const;
+
   QWidget* chooseLivePart(CMainWindow* main) const;
 
   /**

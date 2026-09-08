@@ -18,6 +18,7 @@
 
 #include "shoot/CShotWriter.h"
 
+#include <QAbstractAnimation>
 #include <QApplication>
 #include <QDebug>
 #include <QElapsedTimer>
@@ -75,6 +76,20 @@ void CShotWriter::settle(QWidget* w) {
     return;
   }
   w->ensurePolished();
+
+  // A picture must never catch a fade. Animations run on real elapsed time, so no number of event
+  // loop passes finishes one - a workspace row's focus buttons fade in over 250 ms and came out
+  // invisible. Every running animation of the window is put at its end instead; an endless one
+  // (duration -1) is a pulse that has no end to put it at and is left alone.
+  if (QWidget* window = w->window(); nullptr != window) {
+    const QList<QAbstractAnimation*>& running = window->findChildren<QAbstractAnimation*>();
+    for (QAbstractAnimation* anim : running) {
+      if (QAbstractAnimation::Running == anim->state() && anim->duration() >= 0) {
+        anim->setCurrentTime(anim->duration());
+      }
+    }
+  }
+
   // Layouts activate from a queued invocation, so one pass is not enough for nested forms.
   for (int i = 0; i < 3; i++) {
     if (nullptr != w->layout()) {

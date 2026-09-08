@@ -107,7 +107,54 @@ class CMapItemDelegate : public QStyledItemDelegate {
   /** @brief Clear all per-item cached icons and animation state. */
   void reset() { data.clear(); }
 
+  /**
+     @brief One of the things a map row acts on when it is clicked.
+
+     A row's buttons are painted, not widgets, so they have no address; this enum is their
+     vocabulary. buttonName() is what a recorded scenario stores, because the enum's numbers are
+     not a contract.
+   */
+  enum class button_e {
+    eNone,
+    eActivate,
+    eOverview,
+  };
+  Q_ENUM(button_e)
+
+  /// @return The stable, untranslated name of a button; empty for eNone
+  static QString buttonName(button_e button);
+
+  /// @return The button of that name, eNone when there is none
+  static button_e buttonByName(const QString& name);
+
+  /// @brief A button of a row and where it sits, in the coordinates the layout was built in
+  struct button_t {
+    button_e button = button_e::eNone;
+    QRect rect;
+  };
+
+  /**
+     @brief Which button the point lands on.
+
+     The badge only exists while the row shows the warning, so the item decides and not the layout.
+   */
+  button_t buttonAt(const QStyleOptionViewItem& opt, const IMapItem& item, const QPoint& pos) const;
+
+  /**
+     @brief Act on a row's button.
+
+     The one place a button's effect lives, so a replayed scenario reaches exactly what a click
+     reaches. The caller has already decided which button this is; nothing here hit-tests.
+
+     @return true when the button acted. A missing map does not activate, and that is what keeps
+             the click out of a recording.
+   */
+  bool pressButton(button_e button, IMapItem& item, const QModelIndex& index);
+
  signals:
+  /** Emitted when a row's painted button acted, which is the only way one can be reported. */
+  void sigButtonPressed(const QModelIndex& index, CMapItemDelegate::button_e button);
+
   /** Emitted whenever animation state changes so the view repaints the affected item. */
   void sigUpdateItem(const QString& key);
   /** Internal: relays setProcessing() calls from non-main threads to slotSetProcessing(). */

@@ -357,14 +357,48 @@ bool CDBItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model, cons
   return QStyledItemDelegate::editorEvent(event, model, opt, index);
 }
 
+QString CDBItemDelegate::buttonName(button_e button) {
+  switch (button) {
+    case button_e::eCheckState:
+      return "checkState";
+    case button_e::eNone:
+      return {};
+  }
+  return {};
+}
+
+CDBItemDelegate::button_e CDBItemDelegate::buttonByName(const QString& name) {
+  return buttonName(button_e::eCheckState) == name ? button_e::eCheckState : button_e::eNone;
+}
+
+CDBItemDelegate::button_t CDBItemDelegate::buttonAt(const QStyleOptionViewItem& opt, const IDBItem& item,
+                                                    const QPoint& pos) const {
+  // Which layout a row has follows its type, the same split editorEvent() makes.
+  const ItemLayout& layout =
+      (IDBItem::eTypeItem == item.type()) ? getRectanglesItem(opt, item) : getRectanglesFolder(opt, item);
+  if (layout.rectButton.isValid() && layout.rectButton.contains(pos)) {
+    return {button_e::eCheckState, layout.rectButton};
+  }
+  return {};
+}
+
+bool CDBItemDelegate::pressButton(button_e button, IDBItem& item) {
+  if (button_e::eCheckState != button) {
+    return false;
+  }
+  toggleCheckState(item);
+  return true;
+}
+
 bool CDBItemDelegate::editorEventFolder(QEvent* event, QAbstractItemModel* model, const QStyleOptionViewItem& opt,
                                         const QModelIndex& index, IDBItem& item) {
-  const auto& layout = getRectanglesFolder(opt, item);
-
   if (event->type() == QEvent::MouseButtonPress) {
     auto* me = static_cast<QMouseEvent*>(event);
-    if (layout.rectButton.contains(me->pos())) {
-      toggleCheckState(item);
+    const button_t& hit = buttonAt(opt, item, me->pos());
+    if (button_e::eNone != hit.button) {
+      if (pressButton(hit.button, item)) {
+        emit sigButtonPressed(index, hit.button);
+      }
       return true;
     }
   }
@@ -374,15 +408,19 @@ bool CDBItemDelegate::editorEventFolder(QEvent* event, QAbstractItemModel* model
 
 bool CDBItemDelegate::editorEventItem(QEvent* event, QAbstractItemModel* model, const QStyleOptionViewItem& opt,
                                       const QModelIndex& index, IDBItem& item) {
-  const auto& layout = getRectanglesItem(opt, item);
-
   if (event->type() == QEvent::MouseButtonDblClick) {
-    toggleCheckState(item);
+    // A double click anywhere on the row is the same effect, so it is reported as the same button.
+    if (pressButton(button_e::eCheckState, item)) {
+      emit sigButtonPressed(index, button_e::eCheckState);
+    }
     return true;
   } else if (event->type() == QEvent::MouseButtonPress) {
     auto* me = static_cast<QMouseEvent*>(event);
-    if (layout.rectButton.contains(me->pos())) {
-      toggleCheckState(item);
+    const button_t& hit = buttonAt(opt, item, me->pos());
+    if (button_e::eNone != hit.button) {
+      if (pressButton(hit.button, item)) {
+        emit sigButtonPressed(index, hit.button);
+      }
       return true;
     }
   }

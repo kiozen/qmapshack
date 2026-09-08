@@ -219,6 +219,8 @@ class CShotRecorder : public QObject {
   /// click produced.
   QString pressButtonName;
   QString pressButtonItem;
+  /// Which tree that row belongs to; empty is the workspace
+  QString pressButtonTree;
 
   /// Where the writer pressed on the map, and what was under it - read before the application
   /// handles the press, because handling it is what changes the answer

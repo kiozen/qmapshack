@@ -283,36 +283,91 @@ void CMapItemDelegate::paint(QPainter* p, const QStyleOptionViewItem& opt, const
   p->restore();
 }
 
+QString CMapItemDelegate::buttonName(button_e button) {
+  switch (button) {
+    case button_e::eActivate:
+      return "activate";
+    case button_e::eOverview:
+      return "overview";
+    case button_e::eNone:
+      return {};
+  }
+  return {};
+}
+
+CMapItemDelegate::button_e CMapItemDelegate::buttonByName(const QString& name) {
+  static const QList<button_e> all = {button_e::eActivate, button_e::eOverview};
+  for (button_e button : all) {
+    if (buttonName(button) == name) {
+      return button;
+    }
+  }
+  return button_e::eNone;
+}
+
+CMapItemDelegate::button_t CMapItemDelegate::buttonAt(const QStyleOptionViewItem& opt, const IMapItem& item,
+                                                      const QPoint& pos) const {
+  const auto& layout = getRectangles(opt);
+  // The badge sits on the icon and only exists while the row warns, so it is tested first and by
+  // the item, not by the layout.
+  const QRect& badge = overviewBadgeRect(layout.rectIcon);
+  if (item.showsOverviewWarning() && badge.contains(pos)) {
+    return {button_e::eOverview, badge};
+  }
+  if (layout.rectButton.contains(pos)) {
+    return {button_e::eActivate, layout.rectButton};
+  }
+  return {};
+}
+
+bool CMapItemDelegate::pressButton(button_e button, IMapItem& item, const QModelIndex& index) {
+  switch (button) {
+    case button_e::eOverview:
+      if (!item.showsOverviewWarning()) {
+        return false;
+      }
+      item.triggerOverviewAdvisory();
+      return true;
+
+    case button_e::eActivate: {
+      if (item.getStatus() == IMapItem::eStatus::Missing) {
+        return false;
+      }
+      const bool activate = item.getStatus() != IMapItem::eStatus::Active;
+      item.activate(activate);
+      // Reconcile the indicator with the real outcome: activation can fail (e.g. a
+      // rejected VRT) and leave the item inactive, so the bar must follow the final
+      // status rather than the optimistic click intent.
+      if (item.getStatus() == IMapItem::eStatus::Active) {
+        showIndicator(index);
+      } else {
+        hideIndicator(index);
+      }
+      return true;
+    }
+
+    case button_e::eNone:
+      return false;
+  }
+  return false;
+}
+
 bool CMapItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model, const QStyleOptionViewItem& opt,
                                    const QModelIndex& index) {
   if (event->type() == QEvent::MouseButtonPress) {
     auto* me = static_cast<QMouseEvent*>(event);
-
-    const auto& layout = getRectangles(opt);
-
     IMapItem* item = indexToItem(index);
-    if (item != nullptr && item->showsOverviewWarning() && overviewBadgeRect(layout.rectIcon).contains(me->pos())) {
-      item->triggerOverviewAdvisory();
-      return true;
-    }
-
-    if (layout.rectButton.contains(me->pos())) {
-      if (item == nullptr) {
-        return false;
-      }
-      if (item->getStatus() != IMapItem::eStatus::Missing) {
-        const bool activate = item->getStatus() != IMapItem::eStatus::Active;
-        item->activate(activate);
-        // Reconcile the indicator with the real outcome: activation can fail (e.g. a
-        // rejected VRT) and leave the item inactive, so the bar must follow the final
-        // status rather than the optimistic click intent.
-        if (item->getStatus() == IMapItem::eStatus::Active) {
-          showIndicator(index);
-        } else {
-          hideIndicator(index);
+    if (item != nullptr) {
+      const button_t& hit = buttonAt(opt, *item, me->pos());
+      if (button_e::eNone != hit.button) {
+        // Only a button that acted is a step: a click on a missing map changes nothing, and
+        // replaying it would.
+        if (pressButton(hit.button, *item, index)) {
+          emit sigButtonPressed(index, hit.button);
         }
+        // Consumed either way - the click landed on a button, so the view must not act on it too.
+        return true;
       }
-      return true;
     }
   }
 

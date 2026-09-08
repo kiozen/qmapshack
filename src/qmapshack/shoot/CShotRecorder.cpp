@@ -54,13 +54,19 @@
 
 #include "CMainWindow.h"
 #include "canvas/CCanvas.h"
+#include "gis/CDBItemDelegate.h"
+#include "gis/CGisListDB.h"
 #include "gis/CGisListWks.h"
 #include "gis/CGisWorkspace.h"
 #include "gis/CWksItemDelegate.h"
+#include "gis/IDBItem.h"
 #include "gis/IGisItem.h"
 #include "gis/IWksItem.h"
 #include "gis/proj_x.h"
 #include "gis/trk/CGisItemTrk.h"
+#include "map/CMapItemDelegate.h"
+#include "map/CMapList.h"
+#include "map/IMapItem.h"
 #include "mouse/CMouseNormal.h"
 #include "plot/IPlot.h"
 #include "shoot/CShotChapter.h"
@@ -72,6 +78,10 @@
 namespace {
 /// A press and release further apart than this moved the map; it was no click on what was under it
 constexpr int kDragSlack = 4;
+
+/// Which tree a recorded row button belongs to. Absent is the workspace, which had them first.
+const QString kTreeMaps = "maps";
+const QString kTreeDatabase = "database";
 
 /// How far a replayed click approaches its point from, so the adapter takes the move as one
 constexpr int kApproachPixels = 40;
@@ -89,6 +99,30 @@ bool isWithin(const QWidget* ancestor, const QWidget* widget) {
     }
   }
   return false;
+}
+
+/**
+   @brief Did the press drive this input, or only land somewhere inside it?
+
+   `isWithin()` is the answer for a control holding nothing but its own parts - a combo box owns the
+   list that pops out of it, a spin box its line edit. The two container inputs hold content that is
+   not theirs, and their value changing after a press on that content is the application answering,
+   never a value the writer drove: a click in a plot switched the page it sits on, and the `set`
+   that produced took the click's place, because a press is only recorded when the diff found
+   nothing. So a container is driven from its own surface - the tab bar, the group box's own title -
+   and from nowhere else.
+ */
+bool pressDrove(const QWidget* input, const QWidget* pressed) {
+  if (const QTabWidget* tabs = qobject_cast<const QTabWidget*>(input); nullptr != tabs) {
+    // tabBar() is protected; the bar is a direct child, and FindDirectChildrenOnly keeps a nested
+    // tab widget's bar out.
+    const QList<QTabBar*>& bars = tabs->findChildren<QTabBar*>(Qt::FindDirectChildrenOnly);
+    return !bars.isEmpty() && isWithin(bars.first(), pressed);
+  }
+  if (nullptr != qobject_cast<const QGroupBox*>(input)) {
+    return input == pressed;
+  }
+  return isWithin(input, pressed);
 }
 
 /**
@@ -283,6 +317,115 @@ QWidget* inputTarget(QWidget* widget) {
    @param rectRow  where the row sits, only to place the popup the setup button opens
    @return true when the row and the button were both found and the button acted
  */
+/**
+   @brief The map list and the database tree, which have no accessor on the context.
+
+   Both are unique children of the main window, and both hold plain `QTreeWidgetItem`s whose names
+   are their whole vocabulary - unlike the workspace, where a type tag separates a track from a
+   waypoint of the same name.
+ */
+template <typename T>
+T* treeOf(CShotContext& ctx) {
+  CMainWindow* main = ctx.mainWindow();
+  return (nullptr == main) ? nullptr : main->findChild<T*>();
+}
+
+/// @return The names from the top level down, joined with '/'; empty when the item has no name
+QString namePathOf(const QTreeWidgetItem* item, const std::function<QString(const QTreeWidgetItem*)>& nameOf) {
+  QStringList parts;
+  for (const QTreeWidgetItem* w = item; nullptr != w; w = w->parent()) {
+    const QString& name = nameOf(w);
+    if (name.isEmpty()) {
+      return {};
+    }
+    parts.prepend(name);
+  }
+  return parts.join('/');
+}
+
+/// @return The item that name path addresses, nullptr when the tree has not got it
+QTreeWidgetItem* resolveNamePath(QTreeWidget* tree, const QString& path,
+                                 const std::function<QString(const QTreeWidgetItem*)>& nameOf) {
+  if (nullptr == tree || path.isEmpty()) {
+    return nullptr;
+  }
+  QTreeWidgetItem* current = nullptr;
+  const QStringList& parts = path.split('/');
+  for (const QString& part : parts) {
+    QTreeWidgetItem* found = nullptr;
+    const int count = (nullptr == current) ? tree->topLevelItemCount() : current->childCount();
+    for (int i = 0; i < count; i++) {
+      QTreeWidgetItem* child = (nullptr == current) ? tree->topLevelItem(i) : current->child(i);
+      if (nameOf(child) == part) {
+        found = child;
+        break;
+      }
+    }
+    if (nullptr == found) {
+      return nullptr;
+    }
+    current = found;
+  }
+  return current;
+}
+
+QString mapItemName(const QTreeWidgetItem* item) {
+  const IMapItem* map = dynamic_cast<const IMapItem*>(item);
+  return nullptr == map ? QString() : map->getName();
+}
+
+QString dbItemName(const QTreeWidgetItem* item) {
+  const IDBItem* db = dynamic_cast<const IDBItem*>(item);
+  return nullptr == db ? QString() : db->getName();
+}
+
+/// @return true when the map list's row button acted
+bool pressMapButton(CShotContext& ctx, const QString& path, const QString& name) {
+  // CMapList is the wrapping widget; the rows live in the tree it holds.
+  CMapTreeWidget* list = treeOf<CMapTreeWidget>(ctx);
+  CMapItemDelegate* delegate = (nullptr == list) ? nullptr : qobject_cast<CMapItemDelegate*>(list->itemDelegate());
+  QTreeWidgetItem* row = resolveNamePath(list, path, mapItemName);
+  IMapItem* item = dynamic_cast<IMapItem*>(row);
+  if (nullptr == delegate || nullptr == item) {
+    qWarning() << "shoot: the map list has no" << path << "with buttons";
+    return false;
+  }
+
+  const CMapItemDelegate::button_e button = CMapItemDelegate::buttonByName(name);
+  if (CMapItemDelegate::button_e::eNone == button) {
+    qWarning() << "shoot: the scenario asks for a map row button called" << name << "which this build does not know";
+    return false;
+  }
+  if (!delegate->pressButton(button, *item, list->indexFromItem(row))) {
+    qWarning() << "shoot: the button" << name << "of" << path << "does nothing in this state";
+    return false;
+  }
+  return true;
+}
+
+/// @return true when the database tree's row button acted
+bool pressDbButton(CShotContext& ctx, const QString& path, const QString& name) {
+  CGisListDB* list = treeOf<CGisListDB>(ctx);
+  CDBItemDelegate* delegate = (nullptr == list) ? nullptr : qobject_cast<CDBItemDelegate*>(list->itemDelegate());
+  IDBItem* item = dynamic_cast<IDBItem*>(resolveNamePath(list, path, dbItemName));
+  if (nullptr == delegate || nullptr == item) {
+    qWarning() << "shoot: the database tree has no" << path << "with buttons";
+    return false;
+  }
+
+  const CDBItemDelegate::button_e button = CDBItemDelegate::buttonByName(name);
+  if (CDBItemDelegate::button_e::eNone == button) {
+    qWarning() << "shoot: the scenario asks for a database row button called" << name
+               << "which this build does not know";
+    return false;
+  }
+  if (!delegate->pressButton(button, *item)) {
+    qWarning() << "shoot: the button" << name << "of" << path << "does nothing in this state";
+    return false;
+  }
+  return true;
+}
+
 bool pressRowButton(CShotContext& ctx, const QString& path, const QString& name, const QRect& rectRow) {
   CGisListWks* list = ctx.wksList();
   CWksItemDelegate* delegate = (nullptr == list) ? nullptr : qobject_cast<CWksItemDelegate*>(list->itemDelegate());
@@ -391,7 +534,7 @@ void requestContextMenu(QWidget* target, const QPoint& pos) {
    @param wantedTab  out: the central tab the arrangement asks for, applied once every step has run
    @return The number of failures
  */
-int applyAction(const QJsonObject& action, CShotContext& ctx, int& wantedTab) {
+int applyAction(const QJsonObject& action, CShotContext& ctx, int& wantedTab, QJsonObject& wantedSplitters) {
   int failures = 0;
   const QString& what = action["do"].toString();
 
@@ -410,6 +553,11 @@ int applyAction(const QJsonObject& action, CShotContext& ctx, int& wantedTab) {
       item->setExpanded(true);
     } else {
       ctx.wksList()->setCurrentItem(item);
+      // And the keyboard focus with it. A writer selects a row by clicking it, which focuses the
+      // tree too, and the delegate reads `State_HasFocus` off the option: without it a project's
+      // three focus-based buttons fade to nothing and the picture shows two of five.
+      ctx.wksList()->setFocus(Qt::MouseFocusReason);
+      CShotWriter::settle(ctx.wksList());
     }
     return failures;
   }
@@ -446,6 +594,9 @@ int applyAction(const QJsonObject& action, CShotContext& ctx, int& wantedTab) {
     }
     if (action.contains("tab")) {
       wantedTab = action["tab"].toInt();
+    }
+    if (action.contains("splitters")) {
+      wantedSplitters = action["splitters"].toObject();
     }
     CShotWriter::settle(main);
     return failures;
@@ -502,6 +653,22 @@ int applyAction(const QJsonObject& action, CShotContext& ctx, int& wantedTab) {
 
     // A workspace row is named, so it needs no coordinates at all.
     const QString& path = action["item"].toString();
+
+    // The other two trees are reached by name too, and only through their delegate: their buttons
+    // are painted, and their rows carry no rectangle a later layout would still agree with.
+    const QString& tree = action["tree"].toString();
+    if (!tree.isEmpty()) {
+      const QString& button = action["button"].toString();
+      if (kTreeMaps == tree) {
+        return pressMapButton(ctx, path, button) ? failures : failures + 1;
+      }
+      if (kTreeDatabase == tree) {
+        return pressDbButton(ctx, path, button) ? failures : failures + 1;
+      }
+      qWarning() << "shoot: the scenario names a tree" << tree << "which this build does not know";
+      return failures + 1;
+    }
+
     if (!path.isEmpty()) {
       const QRect& rect = rowRect(ctx, path);
       if (!rect.isValid()) {
@@ -602,6 +769,35 @@ int applyAction(const QJsonObject& action, CShotContext& ctx, int& wantedTab) {
 }
 
 /// @brief Choose the central tab the arrangement asked for, now that every page it counted exists
+/**
+   @brief Put every splitter the scenario recorded back, once the steps have built them.
+
+   Last, with the tab: a details page's splitters do not exist while the arrangement is restored -
+   the step that opens the page has not run yet - and a splitter distributes its state across the
+   width it has, so it wants the window at its final size.
+ */
+int applyWantedSplitters(CShotContext& ctx, const QJsonObject& splitters) {
+  CMainWindow* main = ctx.mainWindow();
+  if (splitters.isEmpty() || nullptr == main) {
+    return 0;
+  }
+  int failures = 0;
+  for (auto it = splitters.constBegin(); it != splitters.constEnd(); ++it) {
+    QSplitter* splitter = qobject_cast<QSplitter*>(CShotChapter::resolve(main, it.key()));
+    if (nullptr == splitter) {
+      qWarning() << "shoot: the scenario arranges a splitter" << it.key() << "this window has not got";
+      failures++;
+      continue;
+    }
+    if (!splitter->restoreState(QByteArray::fromBase64(it.value().toString().toLatin1()))) {
+      qWarning() << "shoot: the splitter" << it.key() << "does not take the state the scenario stored";
+      failures++;
+    }
+  }
+  CShotWriter::settle(main);
+  return failures;
+}
+
 int applyWantedTab(CShotContext& ctx, int wantedTab) {
   int failures = 0;
   if (NOIDX != wantedTab) {
@@ -639,6 +835,7 @@ struct replay_t {
   qsizetype next = 0;
   int failures = 0;
   int wantedTab = NOIDX;
+  QJsonObject wantedSplitters;
   bool abandoned = false;
   /// How many steps are on the stack. More than none means one of them has not returned yet.
   int running = 0;
@@ -665,16 +862,54 @@ void CShotRecorder::watchRowButtons() {
   }
   // A row's tool buttons are painted, not widgets, so no press reaches the filter as anything but
   // a point in the viewport. The delegate is the only thing that knows which button that was.
-  connect(
-      delegate, &CWksItemDelegate::sigButtonPressed, this,
-      [this, list](const QModelIndex& index, CWksItemDelegate::button_e button) {
-        if (!recording) {
-          return;
-        }
-        pressButtonItem = CShotChapter::itemPathOf(list->itemFromIndex(index));
-        pressButtonName = CWksItemDelegate::buttonName(button);
-      },
-      Qt::UniqueConnection);
+  //
+  // Disconnected first, never Qt::UniqueConnection: that flag needs a pointer to a member function
+  // and refuses a lambda outright - "unique connections require a pointer to member function of a
+  // QObject subclass" - so the connect failed and no row button was ever recorded. start() can run
+  // more than once, which is what the flag was there for.
+  disconnect(delegate, &CWksItemDelegate::sigButtonPressed, this, nullptr);
+  connect(delegate, &CWksItemDelegate::sigButtonPressed, this,
+          [this, list](const QModelIndex& index, CWksItemDelegate::button_e button) {
+            if (!recording) {
+              return;
+            }
+            pressButtonItem = CShotChapter::itemPathOf(list->itemFromIndex(index));
+            pressButtonName = CWksItemDelegate::buttonName(button);
+            pressButtonTree.clear();
+          });
+
+  // The map list and the database tree paint their buttons the same way, so they are unreachable
+  // the same way. Their rows carry no type tag - a name path is their whole address - so the step
+  // says which tree it means.
+  if (CMapTreeWidget* maps = treeOf<CMapTreeWidget>(ctx); nullptr != maps) {
+    if (CMapItemDelegate* mapDelegate = qobject_cast<CMapItemDelegate*>(maps->itemDelegate()); nullptr != mapDelegate) {
+      disconnect(mapDelegate, &CMapItemDelegate::sigButtonPressed, this, nullptr);
+      connect(mapDelegate, &CMapItemDelegate::sigButtonPressed, this,
+              [this, maps](const QModelIndex& index, CMapItemDelegate::button_e button) {
+                if (!recording) {
+                  return;
+                }
+                pressButtonItem = namePathOf(maps->itemFromIndex(index), mapItemName);
+                pressButtonName = CMapItemDelegate::buttonName(button);
+                pressButtonTree = kTreeMaps;
+              });
+    }
+  }
+
+  if (CGisListDB* db = treeOf<CGisListDB>(ctx); nullptr != db) {
+    if (CDBItemDelegate* dbDelegate = qobject_cast<CDBItemDelegate*>(db->itemDelegate()); nullptr != dbDelegate) {
+      disconnect(dbDelegate, &CDBItemDelegate::sigButtonPressed, this, nullptr);
+      connect(dbDelegate, &CDBItemDelegate::sigButtonPressed, this,
+              [this, db](const QModelIndex& index, CDBItemDelegate::button_e button) {
+                if (!recording) {
+                  return;
+                }
+                pressButtonItem = namePathOf(db->itemFromIndex(index), dbItemName);
+                pressButtonName = CDBItemDelegate::buttonName(button);
+                pressButtonTree = kTreeDatabase;
+              });
+    }
+  }
 }
 
 void CShotRecorder::start(const QJsonArray& base) {
@@ -744,6 +979,23 @@ QJsonObject CShotRecorder::layoutOf(CShotContext& ctx) {
   action["state"] = QString::fromLatin1(main->saveState().toBase64());
   if (const QTabWidget* tabs = centralTabs(ctx); nullptr != tabs) {
     action["tab"] = tabs->currentIndex();
+  }
+
+  // Every splitter under the window, by the same address as everything else. `saveState()` covers
+  // the dockers and the toolbars and nothing inside the central widget, and what is inside it -
+  // a details page - carries its proportions in its own destructor, which has not run when a
+  // scenario is stored. So the scenario says it itself and depends on no settings file.
+  QJsonObject splitters;
+  const QList<QSplitter*>& all = main->findChildren<QSplitter*>();
+  for (const QSplitter* splitter : all) {
+    const QString& address = CShotChapter::addressOf(main, splitter);
+    if (address.isEmpty()) {
+      continue;
+    }
+    splitters[address] = QString::fromLatin1(splitter->saveState().toBase64());
+  }
+  if (!splitters.isEmpty()) {
+    action["splitters"] = splitters;
   }
   return action;
 }
@@ -878,7 +1130,7 @@ void CShotRecorder::captureChanges() {
     // And only the one the writer pressed on. §6's rule is to drive inputs and let the application
     // produce the rest, and an input it flipped in answer to something else is the rest: clicking a
     // track on the map ticks the profile button inside that track's own options.
-    if (pressWidget.isNull() || !isWithin(input.widget, pressWidget)) {
+    if (pressWidget.isNull() || !pressDrove(input.widget, pressWidget)) {
       continue;
     }
     QJsonObject action;
@@ -895,10 +1147,16 @@ void CShotRecorder::captureChanges() {
     action["do"] = "click";
     action["item"] = pressButtonItem;
     action["button"] = pressButtonName;
+    // Absent means the workspace, so every scenario recorded before the other two trees had
+    // buttons still means what it said.
+    if (!pressButtonTree.isEmpty()) {
+      action["tree"] = pressButtonTree;
+    }
     actions.append(action);
   }
   pressButtonName.clear();
   pressButtonItem.clear();
+  pressButtonTree.clear();
 
   // The map view is not diffed: it is taken whole when the recording stops, so it comes first on
   // replay and a click's geographic point lands where the writer made it.
@@ -927,6 +1185,11 @@ void CShotRecorder::captureChanges() {
     recordPress(pressWasDouble);
   }
   pressWasDouble = false;
+
+  // The press has been answered, so nothing may answer for it again. stop() runs one last capture
+  // for what the final click produced too late for its own, and with the press still standing that
+  // recorded the click a second time - two steps on one point, which is a range of no length.
+  pressWidget = nullptr;
 
   snapshot();
 }
@@ -1149,10 +1412,16 @@ bool CShotRecorder::eventFilter(QObject* watched, QEvent* event) {
 }
 
 int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx, const std::function<void()>& whenReady) {
-  // From nothing, whatever the application is showing: a replay is not a difference. Documentation
-  // mode holds a state up for the writer and then builds the same scenario again to photograph it,
-  // and a step is not idempotent - a second click on a selected range takes the range away.
-  clear(actions, ctx);
+  // From nothing, whatever the application is showing: a replay is not a difference. A step is not
+  // idempotent - a second click on a selected range takes the range away - so a scenario is never
+  // performed on top of one.
+  //
+  // Nothing to perform is the exception: there is no scenario to build from nothing, and the caller
+  // wants the state that is there. Clearing it would take the picture out of the writer's own
+  // state, which is the one thing documentation mode exists to photograph.
+  if (!actions.isEmpty()) {
+    clear(actions, ctx);
+  }
 
   // Steps are scheduled, never called one after another. A step may enter a modal dialog, a popup
   // menu or a nested progress loop, and the event loop running inside it delivers the step after
@@ -1186,11 +1455,12 @@ int CShotRecorder::replay(const QJsonArray& actions, CShotContext& ctx, const st
       // this. Queue it afterwards and the first such step stalls the whole scenario.
       QTimer::singleShot(0, qApp, s->pump);
       s->running++;
-      s->failures += applyAction(action, *s->ctx, s->wantedTab);
+      s->failures += applyAction(action, *s->ctx, s->wantedTab, s->wantedSplitters);
       s->running--;
       return;
     }
     s->failures += applyWantedTab(*s->ctx, s->wantedTab);
+    s->failures += applyWantedSplitters(*s->ctx, s->wantedSplitters);
     if (s->whenReady) {
       s->whenReady();
     }

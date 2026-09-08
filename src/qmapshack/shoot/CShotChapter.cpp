@@ -496,6 +496,9 @@ int CShotChapter::shootOne(const QJsonObject& shot, CShotContext& ctx) {
       up->setExpanded(true);
     }
     ctx.wksList()->setCurrentItem(item);
+    // With the keyboard focus, or a delegate that draws part of a row only while its view has the
+    // focus paints a row the writer never saw.
+    ctx.wksList()->setFocus(Qt::MouseFocusReason);
   }
 
   const QJsonArray& size = shot["size"].toArray();
@@ -534,7 +537,12 @@ int CShotChapter::shootOne(const QJsonObject& shot, CShotContext& ctx) {
       main->resize(renderSize);
       CShotWriter::settle(main);
     }
-    performed = ctx.scenarios().value(scenario).toArray();
+    // Unless the application is already in it: documentation mode holds the state up and the
+    // picture is of that state, so performing it again would run every step a second time on top
+    // of itself. The size above still applies - it is what the state was built at.
+    if (scenario != ctx.liveScenario()) {
+      performed = ctx.scenarios().value(scenario).toArray();
+    }
   }
 
   // Taken as the scenario's last step, never after it. A step that opened a modal dialog is still

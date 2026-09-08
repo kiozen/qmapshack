@@ -98,11 +98,16 @@ class CShotRegionPicker : public QWidget {
     // No background of its own: what it does not paint is the application, still on screen.
     setAttribute(Qt::WA_NoSystemBackground);
     setCursor(Qt::CrossCursor);
-    setFocusPolicy(Qt::StrongFocus);
+    // Never the focus. Taking it would move it off whatever the writer had focused, and a delegate
+    // that draws part of a row only while its view has the focus then paints an emptier row than
+    // the one being framed. Escape is read through an application filter instead.
+    setFocusPolicy(Qt::NoFocus);
+    qApp->installEventFilter(this);
     show();
     raise();
-    setFocus();
   }
+
+  ~CShotRegionPicker() override { qApp->removeEventFilter(this); }
 
   /// @return The rectangle in the parent's coordinates, empty if the writer cancelled
   QRect pick() {
@@ -143,11 +148,14 @@ class CShotRegionPicker : public QWidget {
 
   void mouseReleaseEvent(QMouseEvent*) override { loop.quit(); }
 
-  void keyPressEvent(QKeyEvent* e) override {
-    if (Qt::Key_Escape == e->key()) {
+  /// Escape from wherever the focus is, since the pane deliberately does not hold it
+  bool eventFilter(QObject* watched, QEvent* event) override {
+    if (QEvent::KeyPress == event->type() && Qt::Key_Escape == static_cast<QKeyEvent*>(event)->key()) {
       region = QRect();
       loop.quit();
+      return true;
     }
+    return QWidget::eventFilter(watched, event);
   }
 
  private:
@@ -509,6 +517,8 @@ QJsonObject CShotDocMode::shotOf(const QString& id) const {
   return {};
 }
 void CShotDocMode::setUpScenario(const QString& name) {
+  // What is on screen from here on, so a picture of it does not perform it again.
+  ctx->setLiveScenario(name);
   if (name.isEmpty()) {
     CShotRecorder::replay(baseState, *ctx);
     send("ready " + tr("The window is in the base. Point at what to photograph and press Ctrl+Shift+F9."));
@@ -589,6 +599,22 @@ void CShotDocMode::tag() {
   }
 
   CMainWindow* main = ctx->mainWindow();
+
+  // Before a single question is asked. Asking one takes the focus off the application window, and
+  // Qt reports no focus at all while another window is up - measured on X11 with Qt 6.10.2:
+  // setFocus() on a widget of an inactive window changes nothing, and whether the focus comes back
+  // when that window closes is up to the window manager. A delegate that draws part of a row only
+  // while its view has the focus - a project row's device sync, active project and setup buttons -
+  // would be photographed empty. Every part the writer could pick is rendered here, and the one
+  // they pick is written out; the questions come after, and cannot change what was taken.
+  QHash<const QWidget*, QImage> livePictures;
+  if (nullptr != main && isPartOf(main, target)) {
+    QStringList labels;
+    const QList<QWidget*>& parts = livePartsAt(main, labels);
+    for (QWidget* part : parts) {
+      livePictures.insert(part, CShotWriter::render(part, {}));
+    }
+  }
 
   // A dialog is a window of its own. It is a child of the main window while it is open, so it has
   // a live address - but that address resolves to nothing once it is closed, which is the state
@@ -684,11 +710,16 @@ void CShotDocMode::tag() {
     }
   }
 
-  // The same call the headless run makes, so the picture the writer accepts is the picture the
-  // chapter reproduces.
+  // A part of the application window was photographed before the questions; anything else - a
+  // window a scenario opened, an exposure the build constructs - is taken now, by the same call the
+  // headless run makes, so the picture the writer accepts is the picture the chapter reproduces.
   // Nothing to look at when the picture was not written - a map that never loaded leaves the last
   // one on disk, and a preview of that is the writer accepting a picture nobody took.
-  if (0 != CShotChapter::shootOne(shot, *ctx)) {
+  if (livePictures.contains(target)) {
+    ctx->beginRecipe(id);
+    ctx->setCrop({});
+    ctx->shot(livePictures.value(target));
+  } else if (0 != CShotChapter::shootOne(shot, *ctx)) {
     report(tr("%1 could not be taken; the log says why. Nothing was changed.").arg(id));
     return;
   }
@@ -706,7 +737,7 @@ void CShotDocMode::tag() {
   qInfo().noquote() << QString::fromUtf8(QJsonDocument(shot).toJson(QJsonDocument::Compact));
 }
 
-QWidget* CShotDocMode::chooseLivePart(CMainWindow* main) const {
+QList<QWidget*> CShotDocMode::livePartsAt(CMainWindow* main, QStringList& labels) const {
   // Where the writer is pointing, not where the keyboard focus happens to be: a docker is chosen by
   // looking at it, and clicking a label to focus it first is not something a writer should have to
   // know.
@@ -716,7 +747,7 @@ QWidget* CShotDocMode::chooseLivePart(CMainWindow* main) const {
   }
 
   QList<QWidget*> parts;
-  QStringList labels;
+  labels.clear();
   for (QWidget* w = start; nullptr != w && w != main; w = w->parentWidget()) {
     // Only what a recipe can find again.
     const QString& address = CShotChapter::addressOf(main, w);
@@ -730,6 +761,12 @@ QWidget* CShotDocMode::chooseLivePart(CMainWindow* main) const {
   }
   parts << main;
   labels << tr("The whole application");
+  return parts;
+}
+
+QWidget* CShotDocMode::chooseLivePart(CMainWindow* main) const {
+  QStringList labels;
+  const QList<QWidget*>& parts = livePartsAt(main, labels);
 
   if (parts.size() == 1) {
     return main;
@@ -831,10 +868,10 @@ void CShotDocMode::takeRegion() {
   const QString& scenario = scenarioFor(id);
 
   // The same state the build will start from, arrangement and all, or the rectangle frames one
-  // window and the picture is cut out of another. An empty scenario is the base, which is what the
-  // window already shows.
+  // window and the picture is cut out of another. An empty scenario is the base, and this process'
+  // own scenario is already on screen - performing either again would perform it twice.
   QString trouble;
-  if (!scenario.isEmpty()) {
+  if (!scenario.isEmpty() && scenario != ownScenario) {
     report(tr("Setting %1 up...").arg(scenario));
     const QJsonArray& actions = CShotChapter::scenariosOf(chapterPath()).value(scenario).toArray();
     // Whatever could be built is on screen, even when part of it could not. Refusing here would
@@ -844,6 +881,8 @@ void CShotDocMode::takeRegion() {
                          "hold what you can see now.")
                           .arg(scenario);
     }
+    // The window is in that one now, whatever it was in before.
+    ctx->setLiveScenario(scenario);
     CShotWriter::settle(main);
   }
 
