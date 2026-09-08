@@ -770,10 +770,18 @@ void CShotDocLauncher::refreshPanel(const QString& status) {
     if (known.contains(id)) {
       continue;
     }
+    // A file with no shot behind it is not a picture waiting to be taken: it is a picture that came
+    // from somewhere else - drawn by hand, or taken by an older version. Saying "not taken" about
+    // it sends the writer looking for a state to photograph that never existed.
+    const QString& path = CShotChapter::imagePath(repo, id);
+    const bool exists = QFileInfo::exists(path);
+
     CShotDocPanel::entry_t entry;
     entry.id = id;
-    entry.note = tr("the page uses it, the chapter does not have it");
-    entry.state = CShotDocPanel::eMissing;
+    entry.imagePath = exists ? path : QString();
+    entry.note = exists ? tr("the page uses it and the file is there, but no shot of this chapter took it")
+                        : tr("the page uses it, and there is neither a shot nor a file");
+    entry.state = exists ? CShotDocPanel::eUnregistered : CShotDocPanel::eMissing;
     entries << entry;
   }
 

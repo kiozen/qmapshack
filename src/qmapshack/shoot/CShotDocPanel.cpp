@@ -414,7 +414,9 @@ QString CShotDocPanel::label(state_e state) {
     case eNotUsed:
       return tr("not used");
     case eMissing:
-      return tr("missing");
+      return tr("not taken");
+    case eUnregistered:
+      return tr("not registered");
     case eTaken:
       break;
   }

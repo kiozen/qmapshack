@@ -54,7 +54,8 @@ class CShotDocPanel : public QDialog {
     eTaken,    ///< the image exists and the page uses it
     eNoImage,  ///< the chapter knows it, no file on disk
     eNotUsed,  ///< the image exists, no page references it
-    eMissing,  ///< the page references it, the chapter has no shot
+    eMissing,       ///< the page references it, the chapter has no shot and there is no file either
+    eUnregistered,  ///< the page references it and a file is there, but no shot took it
   };
 
   /// @brief What the writer needs to know about one picture
