@@ -33,7 +33,7 @@
 class CShotRunner : public QObject {
   Q_OBJECT
  public:
-  enum task_e { eTaskChapter, eTaskList, eTaskInspect, eTaskExplore };
+  enum task_e { eTaskChapter, eTaskInspect, eTaskExplore };
 
   /// @return eTaskChapter for an unknown name
   static task_e taskFromName(const QString& name);
@@ -53,7 +53,6 @@ class CShotRunner : public QObject {
   /// @brief Spin the event loop until the main window and its canvases have settled
   void waitForApplication();
 
-  void runList();
   void runInspect();
   void runExplore();
 

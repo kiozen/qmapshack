@@ -45,9 +45,6 @@ class CShotRegistry {
   bool addExposure(const QString& id, const std::type_info* type, const QString& className, exposure_factory_t factory,
                    const QString& description);
 
-  /// @brief All exposure ids, sorted
-  QStringList exposureIds() const;
-
   QString exposureDescription(const QString& id) const;
 
   /// @return The exposure building exactly this widget's class, or an empty string if none does

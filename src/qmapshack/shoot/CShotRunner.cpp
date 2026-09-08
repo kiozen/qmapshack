@@ -80,9 +80,6 @@ qsizetype countAlive(const QList<QPointer<QWidget>>& widgets) {
 }  // namespace
 
 CShotRunner::task_e CShotRunner::taskFromName(const QString& name) {
-  if (name == "list") {
-    return eTaskList;
-  }
   if (name == "inspect") {
     return eTaskInspect;
   }
@@ -121,9 +118,6 @@ void CShotRunner::slotRun() {
   outDir.mkpath(".");
 
   switch (task) {
-    case eTaskList:
-      runList();
-      break;
     case eTaskInspect:
       runInspect();
       break;
@@ -156,23 +150,6 @@ void CShotRunner::runChapter() {
   failures_ += CShotChapter::run(target, ctx, only, scenario);
   failures_ += writer.failures();
   qDebug() << "shoot:" << writer.manifest().size() << "images from" << target << "," << failures_ << "failures";
-}
-
-void CShotRunner::runList() {
-  // Only the widget classes a shot can build from nothing. There is no list of scenarios to report:
-  // a scenario is recorded by the writer and lives in the chapter file, not in this build.
-  QJsonArray exposures;
-  const QStringList& exposureIds = CShotRegistry::self().exposureIds();
-  for (const QString& id : exposureIds) {
-    QJsonObject entry;
-    entry["id"] = id;
-    entry["description"] = CShotRegistry::self().exposureDescription(id);
-    exposures.append(entry);
-  }
-
-  QJsonObject report;
-  report["exposures"] = exposures;
-  writeReport("list.json", report);
 }
 
 void CShotRunner::runInspect() {

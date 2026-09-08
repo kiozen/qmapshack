@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Render, browse and explore the QMapShack documentation images.
+"""Take the pictures a QMapShack documentation page asks for.
 
-The application photographs itself: every image is the output of a recipe compiled into the
-binary, so renaming a widget breaks the build rather than silently producing a stale image.
+QMapShack photographs itself. A page names the pictures it wants, you take them once by hand,
+and the build takes them again from what was recorded - after the program changes, on another
+machine.
 
-  shots.py doc [CHAPTER]         run the app so a writer can tag shots with F9
-  shots.py reap [--delete]       images no page references any more
-  shots.py chapter [NAME]        shoot one chapter file (default: scratch)
-  shots.py build [--only GLOB]   regenerate the image set
-  shots.py list                  every available shot id, with a preview
-  shots.py inspect <id>          dump a widget's children and their settable properties
-  shots.py explore <id>          report which controls actually change the widget
+Writing a page:
+
+  shots.py doc [CHAPTER]         open QMapShack and take pictures with Ctrl+Shift+F9
+  shots.py chapter [NAME]        take one page's pictures again, no window
+  shots.py build [--only GLOB]   take every page's pictures again
+  shots.py reap [--delete]       list, or remove, pictures no page uses
+
+Working on the shooter itself:
+
+  shots.py inspect <id>          what a widget contains, and which of it can be set
+  shots.py explore <id>          which of those controls actually change the picture
 
 `diff` and `update` are deliberately absent: they mean nothing until the output is byte-stable,
 which is the determinism stage of the plan.
@@ -226,7 +231,12 @@ def find_binary(explicit):
 
 def run(binary, out_dir, task, target=None, only=None, verbose=False, chapter=None, scenario=None,
         config_of=NOT_GIVEN):
-    """Run one shoot task and return the report the application wrote."""
+    """Run one shoot task.
+
+    @return the report the application wrote, plus `failures` (its exit code) and `said` (the
+            lines it wrote about individual pictures). Never exits: one chapter that cannot be
+            built must not stop the ones after it.
+    """
     # Absolute, because the run works in the scratch directory: every path handed to the
     # application has to mean the same there as it does here.
     out_dir = Path(out_dir).resolve()
@@ -269,18 +279,28 @@ def run(binary, out_dir, task, target=None, only=None, verbose=False, chapter=No
 
         # In the scratch directory: the run writes its own leftovers there and nowhere else.
         result = subprocess.run(cmd, env=env, cwd=scratch, capture_output=not verbose, text=True)
-        if result.returncode != 0:
-            if not verbose and result.stderr:
-                print(result.stderr, file=sys.stderr)
-            sys.exit(f"{task} failed with {result.returncode} failures")
+        # What the application itself said about a picture. Its own lines are the only thing that
+        # names which one went wrong, so they are handed back rather than dumped: the caller knows
+        # which chapter it was running and can print them under it.
+        # Without the log's timestamp and severity: what matters is which picture and why.
+        said = ["shoot:" + line.split("shoot:", 1)[1].rstrip()
+                for line in (result.stderr or "").splitlines() if "shoot:" in line]
+        failures = result.returncode
 
-    report = {"list": "list.json", "inspect": "inspect.json", "explore": "explore.json"}.get(task)
+    report = {"inspect": "inspect.json", "explore": "explore.json"}.get(task)
     if report is None:
-        return {}
+        return {"failures": failures, "said": said}
     path = out_dir / report
+    if failures != 0 and not path.is_file():
+        for line in said:
+            print(f"  {line}", file=sys.stderr)
+        sys.exit(f"{task} did not finish: {failures} failure(s)")
     if not path.is_file():
         sys.exit(f"the run wrote no {report}")
-    return json.loads(path.read_text())
+    out = json.loads(path.read_text())
+    out["failures"] = failures
+    out["said"] = said
+    return out
 
 
 def cmd_doc(args):
@@ -365,16 +385,21 @@ def shoot_chapter(binary, out, path, name, verbose):
     groups += sorted({s["scenario"] for s in shots if s.get("scenario")})
 
     taken = 0
+    failures = 0
     for group in groups:
         scenario = None if group == BASE_SCENARIO else group
-        run(binary, out, "chapter", target=str(path), scenario=group, config_of=scenario,
-            verbose=verbose, chapter=name)
+        report = run(binary, out, "chapter", target=str(path), scenario=group, config_of=scenario,
+                     verbose=verbose, chapter=name)
+        failures += report["failures"]
         for shot in shots:
             if (shot.get("scenario") or BASE_SCENARIO) == group:
                 print(f"    {shot['id']:<40} {group}")
                 taken += 1
+        # Under the group they belong to, and indented, so it is plain which run they came from.
+        for line in report["said"]:
+            print(f"      {line}")
 
-    return taken, len(groups), 0
+    return taken, len(groups), failures
 
 
 def cmd_chapter(args):
@@ -383,8 +408,11 @@ def cmd_chapter(args):
     if not chapter.get("shots"):
         sys.exit(f"{args.name} has no shots")
 
-    taken, runs, _ = shoot_chapter(find_binary(args.binary), Path(args.out), path, args.name, args.verbose)
+    taken, runs, failures = shoot_chapter(find_binary(args.binary), Path(args.out), path, args.name,
+                                          args.verbose)
     print(f"\n{taken} images from {args.name} in {runs} run(s)")
+    if failures:
+        sys.exit(f"{failures} picture(s) of {args.name}.md did not come out - see the lines above")
 
 
 def page_references():
@@ -439,21 +467,25 @@ def cmd_build(args):
 
     binary = find_binary(args.binary)
     total = 0
+    broken = {}
     for path in chapters:
         if args.only and not fnmatch.fnmatch(path.stem, args.only):
             continue
-        print(f"{path.stem}")
-        taken, _, _ = shoot_chapter(binary, Path(args.out), path, path.stem, args.verbose)
+        # The page it belongs to, because that is the file the writer edits.
+        print(f"{path.stem}.md")
+        taken, _, failures = shoot_chapter(binary, Path(args.out), path, path.stem, args.verbose)
         total += taken
+        if failures:
+            # Counted and carried on with: one page that cannot be built is no reason to leave
+            # every page after it untouched.
+            broken[path.stem] = failures
+
     print(f"\n{total} images in {args.out}")
-
-
-def cmd_list(args):
-    report = run(find_binary(args.binary), Path(args.out), "list", verbose=args.verbose)
-
-    print("Exposed widgets — a shot of one of these needs no new C++, just an id\n")
-    for exposure in report["exposures"]:
-        print(f"  {exposure['id']:<28} {exposure['description']}")
+    if broken:
+        print()
+        for stem, failures in sorted(broken.items()):
+            print(f"{stem}.md: {failures} picture(s) did not come out")
+        sys.exit(f"{len(broken)} of {len(chapters)} page(s) have pictures that did not come out")
 
 
 def cmd_inspect(args):
@@ -525,9 +557,6 @@ def main():
     build = sub.add_parser("build", help="take every chapter's pictures again")
     build.add_argument("--only", help="glob filtering the chapter names")
     build.set_defaults(func=cmd_build)
-
-    listing = sub.add_parser("list", help="the widget classes a shot can build from nothing")
-    listing.set_defaults(func=cmd_list)
 
     inspect = sub.add_parser("inspect", help="dump a widget's children and properties")
     inspect.add_argument("target")
