@@ -13,7 +13,7 @@ One thing before the first time: the pictures need a build with documentation mo
 
 ```
   ┌─────────────────────────────────────────────────────────────┐
-  │ [0]  doc/tools/shots.py doc <page>                          │
+  │ [0]  doc/tools/shots.py <page>                              │
   │                                                             │
   │        two windows: the panel, and QMapShack in one state   │
   │        the panel lists one row per picture the page wants   │
@@ -52,8 +52,8 @@ One thing before the first time: the pictures need a build with documentation mo
   │ [3]  take it                                                │
   │                                                             │
   │        one widget      ->  point at it, Ctrl+Shift+F9       │
-  │        not one widget  ->  Take a region..., pick the       │
-  │                            picture, drag the rectangle      │
+  │        not one widget  ->  select the row, press Region,    │
+  │                            drag the rectangle               │
   └──────────────────────────────┬──────────────────────────────┘
                                  │
                                  ▼
@@ -99,8 +99,8 @@ One thing before the first time: the pictures need a build with documentation mo
 | | it needs a state | [Scenarios](#scenarios) |
 | `[3]` | point at it | [Taking a picture](#taking-a-picture) |
 | `[3]` | drag a rectangle | [Photographing part of a window](#photographing-part-of-a-window) |
-| | take all again | [Take all again](#take-all-again) |
-| | publish | [Publishing](#publishing) |
+| | check the shots still replay | [Take all again](#take-all-again) |
+| | take one again, and judge it | [Publishing](#publishing) |
 | | it will not photograph | [What cannot be photographed](#what-cannot-be-photographed) |
 
 Everything below is that detail. You should not need it to start.
@@ -121,7 +121,7 @@ It is off by default and is never in a released binary. Without it every command
 `shots.py` looks for the program in `build/bin/`. If yours is elsewhere, pass it:
 
 ```
-doc/tools/shots.py --binary path/to/qmapshack doc
+doc/tools/shots.py --binary path/to/qmapshack <page>
 ```
 
 **Windows needs one file copied by hand.** Pictures are rendered without a window, which needs Qt's
@@ -134,7 +134,7 @@ already have.
 ## The panel and QMapShack
 
 ```
-doc/tools/shots.py doc load-a-track
+doc/tools/shots.py load-a-track
 ```
 
 opens two windows:
@@ -173,7 +173,7 @@ changes nothing in the panel; adding or removing an image line does, so press Re
 The base is QMapShack as the configuration starts it, and every chapter opens on it. Most pictures
 are taken in it, so a new row already says `(base)` and needs no preparation.
 
-To change it: `doc/tools/shots.py doc`, arrange the dockers, size the window, set the units and the
+To change it: `doc/tools/shots.py`, arrange the dockers, size the window, set the units and the
 paths, select **(base)** in the scenario list and press **Save config**. You should not have to
 arrange anything again.
 
@@ -259,8 +259,8 @@ window — and which picture it is. Check the result and press **Keep**.
 
 For something that is not one widget — a docker and the map beside it, one corner of a dialog:
 
-1. Press **Take a region...**
-2. Pick which picture you are taking.
+1. Select the picture's row.
+2. Press **Region**, under the list.
 3. Drag a rectangle. Escape cancels.
 
 The rectangle is measured against the window at the size it had while you dragged. Rearrange or
@@ -271,53 +271,61 @@ rectangle does not.
 
 ## Take all again
 
-Press it when no row says *not taken*. It runs the build — one process per scenario, not your
-session — and reports how many pictures came out different.
+This does not decide anything about pictures, and it never changes one. It takes every picture of
+the chapter again into a scratch directory and answers one question:
 
-None means every picture can be taken again from what was recorded, which is what the page needs. If
-one differs, it depended on something its shot does not record; look at it, and record that as a
-scenario of its own.
+> does every shot still replay — did each step find the thing it addresses?
+
+That is what makes a chapter maintainable. The day a programmer changes how a widget is drawn, the
+pictures have to be redone, and this tells you beforehand whether the recordings that produce them
+still work. If a shot fails, the console names it and the step that could not find its target;
+record that state again, or take the picture by hand.
+
+Comparing what it produced against what is in the project would tell you nothing — your machine
+draws every picture slightly differently, so they all differ and none of it means anything.
 
 ---
 
 ## Publishing
 
-Press **Publish** when you are done, before you commit.
+**A picture changes because you took it again and decided it was better.** Nothing is worked out
+for you, because nothing can be: two machines never draw the same picture byte for byte, so no
+comparison can tell a redrawn widget from a differently drawn letter. Only you can.
 
-The pictures you take are kept aside, not put straight into the project. Publish is what puts them
-in — and only the ones you really changed.
+Three buttons sit between the picture list and the picture, and all three act on the row you have
+selected — nothing is selected, nothing is enabled:
 
-It takes your chapter's pictures twice, both times on your own machine: once from the page as it
-already is in the project, and once from the page as you have it now. A picture that comes out the
-same both times was not changed by you, and the project keeps the one it has. A picture that comes
-out different was changed by you, and yours goes in.
+| | |
+|---|---|
+| **Take again** | takes it again exactly the way a build would, without you pointing at anything |
+| **Region** | drags a new rectangle for it |
+| **Revert** | throws away what you just took; the project's picture stays |
 
-What is left to commit is then just your work — usually two or three pictures, not four hundred.
+You can also always point at it yourself and press **Ctrl+Shift+F9**.
 
-That is also why nothing bad happens if you forget. A picture you never published is simply not in
-the project, so you cannot commit one by accident. The panel asks anyway when you close it, but only
-when there is something to publish:
+Either way the row is marked as changed and *both* pictures are kept. The panel then shows them
+side by side:
+
+```
+      in the project                 just taken
+  +--------------------+      +--------------------+
+  |                    |      |                    |
+  |                    |      |                    |
+  +--------------------+      +--------------------+
+```
+
+- better → leave it. **Publish** puts it into the project.
+- not better → **Revert**. The one you just took is thrown away and the row is unchanged again.
+
+**Publish** copies the marked pictures into the project and nothing else. It takes no pictures,
+compares nothing, and is instant. What is left to commit is exactly the pictures you looked at and
+approved.
+
+Nothing bad happens if you forget: a picture you never published is simply not in the project, so
+you cannot commit one by accident. The panel asks when you close it, and only when something is
+waiting:
 
 > You have taken pictures that are not published yet. Publish them now?
-
-Taking pictures and changing nothing else is not something to publish, so that does not ask.
-
-| What you did | What Publish costs |
-|---|---|
-| changed only text | nothing to take again, done at once |
-| took pictures, changed no state | nothing goes in, done at once |
-| recorded or changed a scenario | that chapter's pictures are taken twice, a few seconds each |
-
-**One thing it cannot spot.** If a programmer changes the way QMapShack draws something, your
-pictures are out of date — but Publish uses the same QMapShack for both halves of its comparison, so
-it sees nothing different. Those have to be taken again on purpose, and that is not your job.
-
-If you prefer the command line:
-
-```
-doc/tools/shots.py publish --dry-run     lists what it would do, changes nothing
-doc/tools/shots.py publish
-```
 
 ---
 
@@ -390,8 +398,8 @@ doc/shots/load-a-track.json          the pictures and the scenarios
 doc/shots/load-a-track/<name>.ini    one scenario's settings
 doc/images/load-a-track/*.png        the pictures, as the project has them
 doc/shots/fixture/shots.ini          the base
-doc/images/_work/                    the pictures you have taken but not published
-doc/images/_baseline/                Publish's workings
+doc/images/_work/                    pictures you took again and have not published
+doc/images/_check/                   what Take all again renders; never published
 ```
 
 Everything is named after the page. You write the first file; QMapShack writes the rest.
@@ -406,19 +414,18 @@ your page, say so to whoever maintains the documentation setup.
 
 ## Commands
 
-| Command | Does |
-|---|---|
-| `shots.py doc [CHAPTER]` | open QMapShack and take pictures |
-| `shots.py chapter [NAME]` | take one page's pictures again, without a window |
-| `shots.py build [--only GLOB]` | take every page's pictures again |
-| `shots.py reap [--delete]` | list, or remove, pictures no page uses |
-| `shots.py publish [--dry-run]` | put in only the pictures your work really changed |
+One:
 
-`chapter` and `build` name every picture they take. A picture that fails is printed under its page
-with the reason, the rest of the page is still taken, and the run ends with a count and a non-zero
-exit code. `build` carries on to the next page.
+```
+doc/tools/shots.py <page>
+```
 
-`inspect` and `explore` are for working on the shooter itself, not on a page.
+The panel runs the others for you — the configuration each state starts with, the replay check
+behind *Take all again*, and the copy behind *Publish*. You never type them.
+
+Two are for working on the shooter itself rather than on a page: `inspect` names what a widget
+contains and which of it can be set, `explore` which of those controls actually change the picture.
+`shots.py --help` lists everything.
 
 ---
 

@@ -140,15 +140,21 @@ class CShotDocLauncher : public QObject {
   bool mayClose();
 
   /**
-     @brief Whether publishing now would put anything into the repository.
+     @brief Take one picture again, or drag a rectangle for it, in that picture's own state.
 
-     Two conditions, cheapest first: a picture waiting in the work area, and a chapter whose recipe
-     differs from the last commit. Without the second, taking pictures and changing nothing else
-     put the closing question up every time - a chapter nobody edited can only be put back the way
-     it was. `shots.py publish --check` answers the git half; it takes no pictures and does not
-     start the application.
+     A row's button is reached without the row having been clicked, so the process on screen can be
+     holding another scenario. Its settings were read in its constructors and cannot be changed from
+     outside, so a picture taken there would carry the wrong configuration however faithfully its
+     steps were replayed. When the states differ the right one is started first and @p verb is sent
+     once it reports ready.
    */
-  bool wouldPublishAnything();
+  void actOnShot(const QString& verb, const QString& id);
+
+  /// @brief Take one picture again, in that picture's own state
+  void retakeShot(const QString& id);
+
+  /// @brief Throw one retaken picture away; what the project carries stands
+  void resetShot(const QString& id);
 
   /// @brief Show the picture, and enter its state when this one is not it already
   void showShot(const QString& id);
@@ -178,8 +184,9 @@ class CShotDocLauncher : public QObject {
   /// Asked for before the state process is up, so it is sent as soon as it connects
   bool recordOnStart = false;
 
-  /// Ids whose image the last retake changed; the state process reports them
-  QSet<QString> changedShots;
+  /// What a row's button asked for while the wrong state was up; sent when the right one is ready
+  QString pendingVerb;
+  QString pendingShot;
 
   CShotDocPanel* panel = nullptr;
   QProcess* state = nullptr;

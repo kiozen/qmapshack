@@ -402,7 +402,9 @@ void CShotDocMode::moveToWritersScreen() {
 }
 
 void CShotDocMode::obey(const QString& line) {
-  if ("region" == line) {
+  if (line.startsWith("region ")) {
+    takeRegion(line.mid(7));
+  } else if ("region" == line) {
     takeRegion();
   } else if (line.startsWith("update ")) {
     updateScenario(line.mid(7));
@@ -416,6 +418,8 @@ void CShotDocMode::obey(const QString& line) {
     wantedShot = line.mid(7);
   } else if ("select" == line) {
     wantedShot.clear();
+  } else if (line.startsWith("retake ")) {
+    retakeShot(line.mid(7));
   } else if ("sync" == line) {
     syncScenarios();
   } else {
@@ -783,6 +787,26 @@ QWidget* CShotDocMode::chooseLivePart(CMainWindow* main) const {
   return parts.value(index, main);
 }
 
+void CShotDocMode::retakeShot(const QString& id) {
+  syncScenarios();
+
+  const QJsonObject& shot = CShotChapter::shotOf(chapterPath(), id);
+  if (shot.isEmpty()) {
+    report(tr("%1 has not been taken yet. Point at what it should show and press Ctrl+Shift+F9.").arg(id));
+    return;
+  }
+
+  report(tr("Taking %1 again...").arg(id));
+  if (0 != CShotChapter::shootOne(shot, *ctx)) {
+    report(tr("%1 could not be taken again - see the log. What it is addressed by is not there any "
+              "more, so it has to be taken by hand.")
+               .arg(id));
+    return;
+  }
+
+  send("tagged " + id);
+}
+
 QString CShotDocMode::imagePath(const QString& id) const { return CShotChapter::imagePath(repo, id); }
 
 bool CShotDocMode::confirmResult(const QString& id) const {
@@ -851,7 +875,7 @@ QString CShotDocMode::scenarioConfigPath(const QString& scenario) const {
   return dir.absoluteFilePath(scenario + ".ini");
 }
 
-void CShotDocMode::takeRegion() {
+void CShotDocMode::takeRegion(const QString& id_) {
   syncScenarios();
 
   CMainWindow* main = ctx->mainWindow();
@@ -859,7 +883,8 @@ void CShotDocMode::takeRegion() {
     return;
   }
 
-  const QString& id = askForId();
+  // A row's own button already says which picture; only the panel-wide way has to ask.
+  const QString& id = id_.isEmpty() ? askForId() : id_;
   if (id.isEmpty()) {
     return;
   }

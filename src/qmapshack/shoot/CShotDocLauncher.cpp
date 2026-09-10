@@ -19,7 +19,6 @@
 #include "shoot/CShotDocLauncher.h"
 
 #include <QApplication>
-#include <QCryptographicHash>
 #include <QDebug>
 #include <QFile>
 #include <QFileInfo>
@@ -50,17 +49,6 @@ const int kStopTimeoutMs = 5000;
 
 /// How long a session gets to end by itself before it is ended for it
 const int kEndTimeoutMs = 2000;
-
-/// @return Content hash of a file, or an empty array when it does not exist
-QByteArray digest(const QString& path) {
-  QFile file(path);
-  if (!file.open(QIODevice::ReadOnly)) {
-    return {};
-  }
-  QCryptographicHash hash(QCryptographicHash::Md5);
-  hash.addData(&file);
-  return hash.result();
-}
 
 /// @return The interpreter to run `shots.py` with, or an empty string when there is none
 QString python() {
@@ -115,10 +103,12 @@ void CShotDocLauncher::start() {
   panel->setRenameHandler([this]() { renameScenario(); });
   panel->setDeleteScenarioHandler([this]() { deleteScenario(); });
   panel->setRebindHandler([this](const QString& id, const QString& scenario) { rebindShot(id, scenario); });
-  panel->setTakeRegionHandler([this]() { command("region"); });
+  panel->setTakeRegionHandler([this](const QString& id) { actOnShot("region", id); });
   panel->setReapHandler([this]() { reapUnused(); });
   panel->setPublishHandler([this]() { publishPictures(); });
   panel->setReloadHandler([this]() { refreshPanel(tr("The page was read again.")); });
+  panel->setRetakeShotHandler([this](const QString& id) { retakeShot(id); });
+  panel->setResetShotHandler([this](const QString& id) { resetShot(id); });
   panel->setRetakeHandler([this]() { retakeChapter(); });
   panel->setCloseRequestHandler([this]() { return mayClose(); });
   panel->setClosedHandler([this]() {
@@ -416,6 +406,15 @@ void CShotDocLauncher::handleReport(const QString& line) {
     if (recordOnStart) {
       recordOnStart = false;
       command("record");
+      return;
+    }
+    // A row's button pressed while another state was up: the right one is now on screen.
+    if (!pendingVerb.isEmpty()) {
+      const QString& verb = pendingVerb;
+      const QString& id = pendingShot;
+      pendingVerb.clear();
+      pendingShot.clear();
+      command(verb + " " + id);
     }
     return;
   }
@@ -423,10 +422,6 @@ void CShotDocLauncher::handleReport(const QString& line) {
     selectedShot = rest;
     refreshPanel(tr("%1 taken.").arg(rest));
     sendSelection();
-    return;
-  }
-  if ("changed" == what) {
-    changedShots << rest;
     return;
   }
   if ("recording" == what) {
@@ -548,8 +543,8 @@ void CShotDocLauncher::deleteScenario() {
   }
 
   for (const QString& id : affected) {
-    QFile::remove(CShotChapter::imagePath(repo, id));
-    changedShots.remove(id);
+    QFile::remove(CShotChapter::publishedImagePath(repo, id));
+    QFile::remove(CShotChapter::workImagePath(repo, id));
   }
   CShotChapter::deleteScenario(chapterPath(), name);
   QFile::remove(CShotChapter::scenarioConfigPath(repo, chapter, name));
@@ -589,9 +584,9 @@ void CShotDocLauncher::rebindShot(const QString& id, const QString& scenario) {
     return;
   }
 
-  QFile::remove(CShotChapter::imagePath(repo, id));
+  QFile::remove(CShotChapter::publishedImagePath(repo, id));
+  QFile::remove(CShotChapter::workImagePath(repo, id));
   CShotChapter::rebindShot(chapterPath(), id, scenario);
-  changedShots.remove(id);
   command("sync");
   refreshPanel(scenario.isEmpty()
                    ? tr("%1 has no scenario now and cannot be taken.").arg(id)
@@ -610,44 +605,29 @@ void CShotDocLauncher::retakeChapter() {
     return;
   }
 
-  // What each picture looked like before, so the writer is told which ones came out different. A
-  // picture that changes without QMapShack changing depended on something its shot does not
-  // record - a mouse position, most often.
-  QHash<QString, QByteArray> before;
-  QFile in(chapterPath());
-  if (in.open(QIODevice::ReadOnly)) {
-    const QJsonArray& shots = QJsonDocument::fromJson(in.readAll()).object()["shots"].toArray();
-    for (const QJsonValue& value : shots) {
-      const QString& id = value.toObject()["id"].toString();
-      before.insert(id, digest(CShotChapter::imagePath(repo, id)));
-    }
-  }
-  changedShots.clear();
+  // Nothing is compared. Two machines never draw one picture the same way, so a difference in the
+  // pixels says nothing; what this answers is whether every shot still replays - whether each step
+  // found the thing it addresses. It renders beside the pictures, never over them.
 
   // `--binary` is a global option of shots.py, so it comes before the sub-command.
   const QStringList args{repo.absoluteFilePath("doc/tools/shots.py"), "--binary",
                          QCoreApplication::applicationFilePath(), "chapter", chapter};
   retake = new QProcess(this);
   retake->setProcessChannelMode(QProcess::ForwardedChannels);
-  connect(retake, &QProcess::finished, this, [this, before](int code, QProcess::ExitStatus how) {
+  connect(retake, &QProcess::finished, this, [this](int code, QProcess::ExitStatus how) {
     retake->deleteLater();
     retake = nullptr;
     panel->setBusy(false, QString());
 
     if (QProcess::NormalExit != how || 0 != code) {
-      refreshPanel(tr("The pictures could not all be taken. The console says which."));
+      refreshPanel(
+          tr("Some pictures could not be taken again. The console says which, and why: a step "
+             "no longer finds what it addresses, so that shot has to be taken by hand."));
       return;
     }
-    for (auto it = before.constBegin(); it != before.constEnd(); ++it) {
-      if (!it.value().isEmpty() && digest(CShotChapter::imagePath(repo, it.key())) != it.value()) {
-        changedShots << it.key();
-      }
-    }
-    refreshPanel(changedShots.isEmpty()
-                     ? tr("Every picture was taken again, all unchanged.")
-                     : tr("%1 of the pictures came out different. Look at them: what a build cannot reproduce "
-                          "has to be recorded as a scenario of its own.")
-                           .arg(changedShots.size()));
+    refreshPanel(
+        tr("Every picture of this chapter can still be taken from what was recorded. Nothing "
+           "was changed by this."));
   });
   connect(retake, &QProcess::errorOccurred, this, [this](QProcess::ProcessError problem) {
     if (QProcess::FailedToStart != problem || nullptr == retake) {
@@ -708,18 +688,10 @@ void CShotDocLauncher::publishPictures() {
     const QJsonObject& said = QJsonDocument::fromJson(in.readAll()).object();
     in.close();
 
-    // The rows the writer should look at before making the pull request: these are the only files
-    // the repository is about to carry a change for.
-    changedShots.clear();
-    const QJsonArray& changed = said["changed"].toArray();
-    for (const QJsonValue& value : changed) {
-      changedShots << value.toString();
-    }
-    const int restored = said["restored"].toArray().size();
-
-    refreshPanel(changed.isEmpty()
-                     ? tr("Nothing to publish: %n picture(s) went back to the committed one.", nullptr, restored)
-                     : tr("%n picture(s) changed and are ready for a pull request.", nullptr, changed.size()));
+    const int published = said["published"].toArray().size();
+    refreshPanel(0 == published
+                     ? tr("Nothing was taken again, so there was nothing to publish.")
+                     : tr("%n picture(s) went into the project and are ready to commit.", nullptr, published));
 
     if (closeWhenPublished) {
       closeWhenPublished = false;
@@ -745,41 +717,45 @@ void CShotDocLauncher::publishPictures() {
   publish->start(interpreter, args);
 }
 
-bool CShotDocLauncher::wouldPublishAnything() {
-  if (!CShotChapter::hasUnpublishedImages(repo)) {
-    return false;
-  }
-  const QString& interpreter = python();
-  if (interpreter.isEmpty()) {
-    // Nothing can be published without it either, but the writer is better told than left to find
-    // out on the way out.
-    return true;
+void CShotDocLauncher::retakeShot(const QString& id) { actOnShot("retake", id); }
+
+void CShotDocLauncher::actOnShot(const QString& verb, const QString& id) {
+  if (id.isEmpty()) {
+    return;
   }
 
-  const QString& report = QDir(scratch->path()).absoluteFilePath("check.json");
-  QFile::remove(report);
+  // A picture with no shot behind it has no scenario to be in; the base is where it is taken.
+  const QJsonObject& shot = CShotChapter::shotOf(chapterPath(), id);
+  const QString& scenario = shot["scenario"].toString();
 
-  QProcess check;
-  check.start(interpreter, {repo.absoluteFilePath("doc/tools/shots.py"), "publish", "--check", "--report", report});
-  // It reads git and writes one small file, so it is over in well under a second. A close is not
-  // worth an event loop of its own.
-  if (!check.waitForFinished(10000) || QProcess::NormalExit != check.exitStatus() || 0 != check.exitCode()) {
-    return true;
+  selectedShot = id;
+  if (nullptr != state && scenario == liveScenario) {
+    command(verb + " " + id);
+    return;
   }
 
-  QFile in(report);
-  if (!in.open(QIODevice::ReadOnly)) {
-    return true;
+  pendingVerb = verb;
+  pendingShot = id;
+  selectedScenario = scenario;
+  panel->setBusy(true, tr("Please wait, putting %1 up first").arg(scenario.isEmpty() ? tr("the base") : scenario));
+  enterScenario(scenario);
+}
+
+void CShotDocLauncher::resetShot(const QString& id) {
+  const QString& own = CShotChapter::workImagePath(repo, id);
+  if (!QFileInfo::exists(own)) {
+    refreshPanel(tr("%1 has not been taken again, so there is nothing to throw away.").arg(id));
+    return;
   }
-  const QJsonObject& said = QJsonDocument::fromJson(in.readAll()).object();
-  return said["wouldPublish"].toBool();
+  QFile::remove(own);
+  refreshPanel(tr("%1 is back to the one the project carries.").arg(id));
 }
 
 bool CShotDocLauncher::mayClose() {
   if (nullptr != publish) {
     return false;
   }
-  if (publishAsked || !wouldPublishAnything()) {
+  if (publishAsked || !CShotChapter::hasUnpublishedImages(repo)) {
     return true;
   }
 
@@ -888,9 +864,13 @@ void CShotDocLauncher::refreshPanel(const QString& status) {
       entry.scenario = shot["scenario"].toString();
       entry.note = shot["note"].toString();
 
-      const QString& path = CShotChapter::imagePath(repo, entry.id);
-      const bool exists = QFileInfo::exists(path);
-      entry.imagePath = exists ? path : QString();
+      const QString& own = CShotChapter::workImagePath(repo, entry.id);
+      const QString& theirs = CShotChapter::publishedImagePath(repo, entry.id);
+      entry.changed = QFileInfo::exists(own);
+      entry.publishedPath = QFileInfo::exists(theirs) ? theirs : QString();
+      const QString& path = entry.changed ? own : entry.publishedPath;
+      const bool exists = !path.isEmpty();
+      entry.imagePath = path;
 
       if (!referenced.contains(entry.id)) {
         entry.state = CShotDocPanel::eNotUsed;
@@ -900,7 +880,6 @@ void CShotDocLauncher::refreshPanel(const QString& status) {
         entry.state = CShotDocPanel::eTaken;
       }
 
-      entry.changed = changedShots.contains(entry.id);
       known << entry.id;
       entries << entry;
     }

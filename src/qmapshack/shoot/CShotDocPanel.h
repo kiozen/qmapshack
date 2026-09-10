@@ -21,6 +21,7 @@
 
 #include <QDialog>
 #include <QList>
+#include <QPixmap>
 #include <QString>
 #include <QStringList>
 #include <functional>
@@ -28,6 +29,7 @@
 class QLabel;
 class QListWidget;
 class QPushButton;
+class QToolButton;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -65,10 +67,13 @@ class CShotDocPanel : public QDialog {
     QString scenario;
     QString note;
     state_e state = eTaken;
-    /// The last retake produced a different image than the one on disk before it
+    /// This picture was retaken and not published yet, so two of it exist
     bool changed = false;
-    /// Empty when there is no image on disk yet
+    /// What is shown: the retaken picture when there is one, the project's otherwise. Empty when
+    /// there is no image at all yet.
     QString imagePath;
+    /// What the project carries, so a retake can be held against it. Empty when it has none.
+    QString publishedPath;
   };
 
   CShotDocPanel(const QString& chapter, QWidget* parent);
@@ -108,12 +113,18 @@ class CShotDocPanel : public QDialog {
   void setRebindHandler(std::function<void(const QString&, const QString&)> handler) { rebind = handler; }
 
   /// @brief The writer wants a rectangle of the window instead of one of its widgets
-  void setTakeRegionHandler(std::function<void()> handler) { takeRegion = handler; }
+  void setTakeRegionHandler(std::function<void(const QString&)> handler) { takeRegion = handler; }
 
   void setReapHandler(std::function<void()> handler) { reap = handler; }
 
   /// @brief Read the page again; the writer has added or removed an image line
   void setReloadHandler(std::function<void()> handler) { reload = handler; }
+
+  /// @brief Take one picture again, in the state that is on screen
+  void setRetakeShotHandler(std::function<void(const QString&)> handler) { retakeShot = handler; }
+
+  /// @brief Throw one retaken picture away; the project's stands
+  void setResetShotHandler(std::function<void(const QString&)> handler) { resetShot = handler; }
 
   /// @brief Put into doc/images only the pictures a recipe change actually moved
   void setPublishHandler(std::function<void()> handler) { publish = handler; }
@@ -169,8 +180,14 @@ class CShotDocPanel : public QDialog {
 
   void showPreview();
 
+  /// @brief The project's picture and the one just taken, side by side and captioned
+  QPixmap comparison(const QString& before, const QString& after) const;
+
   /// @brief The combo box a picture's row carries, offering every scenario and "none"
   void buildScenarioCell(QTreeWidgetItem* row, const entry_t& entry);
+
+  /// @brief Enable the three per-picture buttons for whatever is selected, or disable them all
+  void updateShotActions();
 
   static QString label(state_e state);
 
@@ -180,9 +197,11 @@ class CShotDocPanel : public QDialog {
   std::function<void()> rename;
   std::function<void()> deleteScenario;
   std::function<void(const QString&, const QString&)> rebind;
-  std::function<void()> takeRegion;
+  std::function<void(const QString&)> takeRegion;
   std::function<void()> reap;
   std::function<void()> reload;
+  std::function<void(const QString&)> retakeShot;
+  std::function<void(const QString&)> resetShot;
   std::function<void()> publish;
   std::function<void()> retake;
   std::function<bool()> closeRequest;
@@ -193,6 +212,10 @@ class CShotDocPanel : public QDialog {
   QTreeWidget* shots = nullptr;
   QPushButton* recordButton = nullptr;
   QPushButton* reapButton = nullptr;
+  /// The three that act on the selected picture; nothing to act on means nothing enabled
+  QToolButton* againButton = nullptr;
+  QToolButton* regionButton = nullptr;
+  QToolButton* revertButton = nullptr;
   /// Everything a recording has to keep the writer away from
   QList<QPushButton*> whileIdle;
   QLabel* page = nullptr;

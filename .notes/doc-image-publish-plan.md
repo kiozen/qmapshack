@@ -1,6 +1,6 @@
 # PLAN — publish only the pictures that really changed
 
-**Status:** implemented — `shots.py publish` and the panel's *Publish* button. Measured below.
+**Status:** implemented. The writer decides; the tool compares nothing.
 
 **Scope:** `doc/tools/shots.py` (a `publish` command), `src/qmapshack/shoot/CShotDocPanel.cpp`
 (a fourth button), `CShotDocLauncher` (it already runs `shots.py` and owns the file operations).
@@ -53,106 +53,57 @@ solve the problem — a different Qt or FreeType still renders differently, test
 
 ## The mechanism
 
-A writer's edit touches only tracked text — `doc/pages/*.md`, `doc/shots/*.json`,
-`doc/shots/<ch>/*.ini`, `doc/shots/fixture/shots.ini`. The binary does not change. So the *before*
-state is recoverable from git at any time and can be rendered on demand, on the writer's own
-machine, with the same binary they have been using.
+**A picture changes because somebody retook it and looked at what came out.** Never inferred.
 
-Compare that against their working-tree render. Machine, Qt and code appear in both passes and
-cancel; the only surviving difference is the recipe.
+Comparing pixels cannot work - the measurement above is why - and comparing two renders of the two
+recipes, which is what this file described before, works only for a recipe change. It is blind by
+construction to a C++ change that repaints a widget: both renders use the same binary, so the
+change cancels and the stale picture stays while the correct one is discarded. Measured, not
+argued: with a code change in the tree, `publish --all` rendered all nine and reported
+`0 picture(s) changed`.
+
+So the comparison is put where it can be made:
 
 ```
-shots.py publish
-  1. git diff --name-only HEAD -- doc/pages doc/shots   → which chapters were touched
-  2. git archive HEAD doc | tar -x -C <tmp>             → HEAD's recipe (~750K)
-  3. render those chapters from <tmp>                   → before
-  4. render those chapters from the working tree        → after
-  5. per image: bytes equal   → git checkout -- <image>
-                bytes differ → keep the working-tree one
+  retake one shot     Ctrl+Shift+F9  |  Take a region...  |  Take again (button)
+        |
+        v
+  the row is marked changed, both pictures kept
+        |
+        v
+  the panel shows them side by side, captioned
+        |
+        +-- leave it            -> Publish puts it in
+        +-- Keep the old one    -> the work copy is deleted, the row is unchanged
+        |
+        v
+  publish = copy the marked ones into doc/images. No render, no git, instant.
 ```
 
-Granularity is per image, not per chapter: a chapter of 30 pictures where one scenario changed
-restores the other 29 and keeps only what moved.
+Nothing stores the flag: a row is changed exactly while a work copy exists for it, which is
+`CShotChapter::workImagePath()` and `hasUnpublishedImages()`.
 
-Step 3 must run **the temp tree's own** `shots.py` with an absolute `--binary`. `REPO` resolves
-from `__file__`, so the working tree's copy would render the working tree's recipe twice and always
-conclude nothing changed.
+## Three directories
 
-## What it cannot see
-
-A code change that repaints something with no recipe change — by construction, since the same
-binary renders both passes. That case belongs to the developer who made it, not the writer:
-`publish --all` on the chapters they know they touched, or a CI job that builds base and PR on one
-machine and renders both. Neither is part of this plan.
-
-## The writer's side
-
-Nothing before writing, no git, no discipline. The loop stays as it is: work in the doc panel,
-render as often as wanted, look at the pages. One button at the end.
-
-A fourth button beside *Take a region…* / *Take all again* / *Remove unused* in
-`CShotDocPanel.cpp:195`: **Publish**. It reports how many pictures changed and lists them.
-`CShotDocLauncher` runs it — it already owns every file operation and already runs `shots.py`
-through `--doc-python`, which is what a Windows session needs (`python3` there is normally the
-store's app execution alias).
-
-## Measured
-
-Another machine was simulated with `FONTCONFIG_FILE` — the same swap that moves 3–15 % of pixels
-above — so every picture rendered differently from the committed one while meaning the same.
-
-| case | renders | wall | outcome |
+| | written by | published | in git |
 |---|---|---|---|
-| clean tree | 0 | 0.12 s | — |
-| 9 pictures dirty, no recipe change | 0 | 0.16 s | all 9 put back |
-| one shot's `size` changed, whole chapter dirty | 2 | 13.8 s | 1 kept, 8 put back |
-| the same, baseline cached | 1 | 6.9 s | 1 kept, 8 put back |
+| `doc/images/` | `publish`, nothing else | — | yes |
+| `doc/images/_work/` | the session, when a picture is taken | by `publish`, then emptied | no |
+| `doc/images/_check/` | `shots.py chapter` / `build` | never | no |
 
-A control says the compare is not simply answering "unchanged" to everything: `Units/type` 0 → 1 in
-`track-range.ini` moves no picture in this chapter, confirmed by rendering both recipes by hand, and
-`publish` reports none. Changing a shot's `size` does move one, and it reports that one.
+The third is what keeps *Take all again* from marking every row: it answers whether each shot still
+replays, which is a different question from whether a picture should change, and it must not leave
+its output where a deliberate retake leaves its own.
 
-## The tool is not part of the recipe
+## Take all again
 
-`head_tree()` puts the **working tree's** `doc/tools/` into the extracted checkout, keeping only
-HEAD's `doc/shots/`. Rendering HEAD's own `shots.py` compares two versions of the shooter as well as
-two recipes, and HEAD's - not knowing `QMS_SHOTS_CACHE` - renders against the empty tile cache of a
-throwaway checkout, which reported every map picture as changed. That was a live false positive
-during development, not a hypothetical.
+Not a picture comparison. It replays every shot of the chapter and reports which steps could not
+find what they address. That is the thing worth knowing before a C++ change forces the pictures to
+be redone, and it is the only part of the old design that survived contact with the real question.
 
 ## Left to do
 
-1. Optional, independent: pin fontconfig in `pinned_env()` the way the platform theme is pinned. It
-   removes one noise term and makes a writer's session and the build agree on one machine. Nothing
-   above needs it.
-2. A CI check would catch the case `publish` cannot see - a code change that repaints something -
-   by rendering base and PR on one machine. Not viable here: a free GitHub runner would have to
-   build Qt6, GDAL, PROJ and Routino in documentation mode first.
-
-## The work area
-
-`doc/images/` is written by `publish` and by nothing else. Every render - a writer's session,
-`chapter`, `build` - lands in `doc/images/_work/`, which is git-ignored, and `publish` empties it
-once it has taken what it wants.
-
-That is what makes forgetting harmless. Rendering into the tracked directory leaves a changed file
-for every picture taken, so a writer who never publishes commits noise and nobody notices. Rendering
-beside it leaves nothing to commit at all: forgetting costs a picture that was not updated, which is
-visible, instead of a change that was not made, which is not.
-
-`CShotChapter::imagePath()` resolves the work copy first and the published one after, so the panel
-shows the writer their own picture where they have one and the project's where they have not.
-`hasUnpublishedImages()` is one file in the work area, which is exactly "taken since the last
-publish" because `publish` empties it. That alone is not enough to ask the closing question with:
-taking a chapter's pictures again without editing anything leaves nine of them there and can
-produce nothing, because an untouched chapter is only ever put back the way it was. So
-`wouldPublishAnything()` adds the git half through `shots.py publish --check`, which answers
-"is any chapter's recipe different from the last commit" in 0.06 s without taking a picture or
-starting the application.
-
-## Verification
-
-- Two `publish` runs with no edits in between must leave the tree clean.
-- Edit one scenario's `.ini`; only that scenario's pictures may survive the compare.
-- Render everything by hand first so every PNG is dirty, then `publish` — the tree must come back
-  to only the genuinely changed ones.
+- A picture whose scenario no longer replays has to be taken by hand; nothing walks the writer
+  through that beyond naming the failed step.
+- Optional, independent: pin fontconfig in `pinned_env()` the way the platform theme is pinned. It
+  removes one noise term between a writer's session and the build on one machine. Nothing needs it.

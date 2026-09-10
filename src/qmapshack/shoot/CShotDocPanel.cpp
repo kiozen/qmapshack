@@ -24,16 +24,20 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
 #include <QLabel>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QMoveEvent>
+#include <QPainter>
 #include <QPixmap>
 #include <QPushButton>
 #include <QResizeEvent>
 #include <QScreen>
 #include <QShowEvent>
+#include <QSize>
 #include <QTimer>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWindow>
@@ -137,7 +141,10 @@ CShotDocPanel::CShotDocPanel(const QString& chapter, QWidget* parent)
 
   // --- the pictures ----------------------------------------------------------------------------
 
-  layout->addWidget(new QLabel(tr("<b>Pictures</b> — point at one and press <b>Ctrl+Shift+F9</b>:"), this));
+  layout->addWidget(
+      new QLabel(tr("<b>Pictures</b> — select one, then point in QMapShack at what it should show and press "
+                    "<b>Ctrl+Shift+F9</b>:"),
+                 this));
 
   shots = new QTreeWidget(this);
   shots->setRootIsDecorated(false);
@@ -162,6 +169,43 @@ CShotDocPanel::CShotDocPanel(const QString& chapter, QWidget* parent)
   });
   layout->addWidget(shots);
 
+  // Between the list and the picture, because that is where they read: they act on the row above
+  // and what they do shows below. Nothing selected means nothing to act on, so all three are dead
+  // until a row is picked - which also puts that picture's own state on screen, which is what they
+  // need to be right.
+  QHBoxLayout* shotActions = new QHBoxLayout;
+  const int side = fontMetrics().height() + 12;
+  const auto add = [&](const QString& icon, const QString& text, const QString& hint,
+                       std::function<void(const QString&)>* call) {
+    QToolButton* button = new QToolButton(this);
+    // A .svgt through the icon engine, never a pixmap: it follows the colour scheme and is drawn
+    // at the screen's own resolution.
+    button->setIcon(QIcon(icon));
+    button->setIconSize(QSize(side - 10, side - 10));
+    button->setText(text);
+    button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    button->setToolTip(hint);
+    button->setEnabled(false);
+    connect(button, &QToolButton::clicked, this, [this, call]() {
+      const QString& id = currentId();
+      if (*call && !id.isEmpty()) {
+        (*call)(id);
+      }
+    });
+    shotActions->addWidget(button);
+    return button;
+  };
+
+  againButton =
+      add(":/icons/Screenshot.svgt", tr("Take again"),
+          tr("Take this picture again, exactly the way a build would, in the state that is on screen."), &retakeShot);
+  regionButton = add(":/icons/SelectArea.svgt", tr("Region"),
+                     tr("Drag a rectangle for this picture instead of pointing at one widget."), &takeRegion);
+  revertButton = add(":/icons/Reset.svgt", tr("Revert"),
+                     tr("Throw away the picture you just took; the one the project carries stays."), &resetShot);
+  shotActions->addStretch();
+  layout->addLayout(shotActions);
+
   preview = new QLabel(this);
   preview->setMinimumHeight(200);
   preview->setAlignment(Qt::AlignCenter);
@@ -170,20 +214,11 @@ CShotDocPanel::CShotDocPanel(const QString& chapter, QWidget* parent)
 
   QHBoxLayout* actions = new QHBoxLayout;
 
-  QPushButton* region = new QPushButton(tr("Take a region..."), this);
-  region->setToolTip(
-      tr("Drag a rectangle over the window for what no single part of it is. The picture's own "
-         "scenario is built first, so the same part is cut out of the same state next time."));
-  connect(region, &QPushButton::clicked, this, [this]() {
-    if (takeRegion) {
-      takeRegion();
-    }
-  });
-  actions->addWidget(region);
-  whileIdle << region;
-
   QPushButton* again = new QPushButton(tr("Take all again"), this);
-  again->setToolTip(tr("Take every picture of this chapter again and report what changed."));
+  again->setToolTip(
+      tr("Check that every picture of this chapter can still be taken from what was recorded. It "
+         "renders beside them and changes nothing: whether a picture should change is yours to say, "
+         "one picture at a time."));
   connect(again, &QPushButton::clicked, this, [this]() {
     if (retake) {
       retake();
@@ -217,10 +252,9 @@ CShotDocPanel::CShotDocPanel(const QString& chapter, QWidget* parent)
 
   QPushButton* publishButton = new QPushButton(tr("Publish"), this);
   publishButton->setToolTip(
-      tr("Put into the repository only the pictures your changes really moved. Every other picture "
-         "goes back to the one that is committed: a picture drawn on another machine differs in its "
-         "pixels without showing anything different, and committing those would grow the repository "
-         "for nothing."));
+      tr("Put the pictures you took again into the project. Only those: a picture nobody retook is "
+         "left exactly as it is, because a picture drawn on another machine differs in its pixels "
+         "without showing anything different."));
   connect(publishButton, &QPushButton::clicked, this, [this]() {
     if (publish) {
       publish();
@@ -375,7 +409,21 @@ void CShotDocPanel::closeEvent(QCloseEvent* event) {
   }
 }
 
+void CShotDocPanel::updateShotActions() {
+  const int row = shots->indexOfTopLevelItem(shots->currentItem());
+  const entry_t& entry = entries.value(row);
+  const bool picked_ = !entry.id.isEmpty();
+
+  // Taking one again needs a shot to take it from: a picture the page asks for and nothing has ever
+  // photographed has no address to re-use, so it has to be pointed at or dragged first.
+  againButton->setEnabled(picked_ && (eTaken == entry.state || eNoImage == entry.state));
+  regionButton->setEnabled(picked_);
+  revertButton->setEnabled(picked_ && entry.changed);
+}
+
 void CShotDocPanel::showPreview() {
+  updateShotActions();
+
   const int row = shots->indexOfTopLevelItem(shots->currentItem());
   const entry_t& entry = entries.value(row);
   if (entry.imagePath.isEmpty()) {
@@ -384,10 +432,49 @@ void CShotDocPanel::showPreview() {
     return;
   }
 
-  const QPixmap picture(entry.imagePath);
   preview->setText(QString());
-  preview->setPixmap(
-      picture.scaled(preview->width() - 8, preview->height() - 8, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+
+  // Nothing was retaken, or the project has nothing to hold it against: one picture, as large as
+  // the panel allows.
+  if (!entry.changed || entry.publishedPath.isEmpty()) {
+    const QPixmap picture(entry.imagePath);
+    preview->setPixmap(
+        picture.scaled(preview->width() - 8, preview->height() - 8, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    return;
+  }
+
+  preview->setPixmap(comparison(entry.publishedPath, entry.imagePath));
+}
+
+QPixmap CShotDocPanel::comparison(const QString& before, const QString& after) const {
+  // Side by side and captioned, because that is the whole question the writer is being asked: two
+  // machines never draw one picture the same way, so only a person can say whether what changed is
+  // the widget or the way its letters were drawn.
+  const int gap = 8;
+  const int caption = fontMetrics().height() + 2;
+  const int half = (preview->width() - 3 * gap) / 2;
+  const int tall = preview->height() - 2 * gap - caption;
+  if (half < 16 || tall < 16) {
+    return {};
+  }
+
+  const QPixmap left = QPixmap(before).scaled(half, tall, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+  const QPixmap right = QPixmap(after).scaled(half, tall, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+  QPixmap sheet(preview->width() - 2, preview->height() - 2);
+  sheet.fill(Qt::transparent);
+
+  QPainter paint(&sheet);
+  paint.setPen(palette().color(QPalette::WindowText));
+
+  const QRect leftBox(gap, gap + caption, half, tall);
+  const QRect rightBox(2 * gap + half, gap + caption, half, tall);
+  paint.drawText(QRect(gap, gap, half, caption), Qt::AlignHCenter, tr("in the project"));
+  paint.drawText(QRect(2 * gap + half, gap, half, caption), Qt::AlignHCenter, tr("just taken"));
+  paint.drawPixmap(leftBox.x() + (half - left.width()) / 2, leftBox.y(), left);
+  paint.drawPixmap(rightBox.x() + (half - right.width()) / 2, rightBox.y(), right);
+
+  return sheet;
 }
 
 void CShotDocPanel::setStatus(const QString& text) { status->setText(text); }
@@ -430,6 +517,15 @@ void CShotDocPanel::setRecording(bool on) {
   }
   scenarios->setEnabled(!on);
   shots->setEnabled(!on);
+  // Not in whileIdle, which is a list of QPushButton. On the way out of a recording the selection
+  // decides again.
+  if (on) {
+    againButton->setEnabled(false);
+    regionButton->setEnabled(false);
+    revertButton->setEnabled(false);
+  } else {
+    updateShotActions();
+  }
   // Its own enabled state is the reap button's to decide; setShots() has the count.
   if (!on) {
     reapButton->setEnabled(false);

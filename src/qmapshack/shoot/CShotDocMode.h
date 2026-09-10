@@ -124,6 +124,15 @@ class CShotDocMode : public QObject {
 
   QString imagePath(const QString& id) const;
 
+  /**
+     @brief Take one picture again, without the writer pointing at anything.
+
+     The address is the one the shot already carries, so what comes out is what a build would
+     produce - which is the picture the writer has to judge. The scenario on screen is this
+     process' own, and shootOne() does not perform a scenario it is already in.
+   */
+  void retakeShot(const QString& id);
+
   /// @brief Tell the writer which one line a developer has to add for an unexposed class
   void reportUnexposed(QWidget* target) const;
 
@@ -224,7 +233,8 @@ class CShotDocMode : public QObject {
      worth showing on its own. The scenario is built first and stays standing while the writer
      drags, so the same part is cut out of the same state next time.
    */
-  void takeRegion();
+  /// @brief Drag a rectangle for @p id, or ask which picture when it is empty
+  void takeRegion(const QString& id = QString());
 
   /// @return The chapter's entry for this id, empty when it has none
   QJsonObject shotOf(const QString& id) const;

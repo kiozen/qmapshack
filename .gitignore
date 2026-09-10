@@ -10,6 +10,6 @@ CMakeUserPresets.json
 doc/shots/_cache/
 doc/images/_cache/
 doc/images/_preview/
-doc/images/_baseline/
+doc/images/_check/
 doc/images/_work/
 doc/images/*.json
