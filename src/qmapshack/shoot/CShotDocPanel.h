@@ -112,6 +112,9 @@ class CShotDocPanel : public QDialog {
 
   void setReapHandler(std::function<void()> handler) { reap = handler; }
 
+  /// @brief Read the page again; the writer has added or removed an image line
+  void setReloadHandler(std::function<void()> handler) { reload = handler; }
+
   /// @brief Put into doc/images only the pictures a recipe change actually moved
   void setPublishHandler(std::function<void()> handler) { publish = handler; }
 
@@ -179,6 +182,7 @@ class CShotDocPanel : public QDialog {
   std::function<void(const QString&, const QString&)> rebind;
   std::function<void()> takeRegion;
   std::function<void()> reap;
+  std::function<void()> reload;
   std::function<void()> publish;
   std::function<void()> retake;
   std::function<bool()> closeRequest;

@@ -118,6 +118,7 @@ void CShotDocLauncher::start() {
   panel->setTakeRegionHandler([this]() { command("region"); });
   panel->setReapHandler([this]() { reapUnused(); });
   panel->setPublishHandler([this]() { publishPictures(); });
+  panel->setReloadHandler([this]() { refreshPanel(tr("The page was read again.")); });
   panel->setRetakeHandler([this]() { retakeChapter(); });
   panel->setCloseRequestHandler([this]() { return mayClose(); });
   panel->setClosedHandler([this]() {

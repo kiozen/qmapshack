@@ -202,6 +202,19 @@ CShotDocPanel::CShotDocPanel(const QString& chapter, QWidget* parent)
   actions->addWidget(reapButton);
   whileIdle << reapButton;
 
+  QPushButton* reloadButton = new QPushButton(tr("Reload page"), this);
+  reloadButton->setToolTip(
+      tr("Read the page again. The list of pictures is built from its image lines when this window "
+         "opens and not again, so a line you have just added or removed shows up here only after "
+         "this."));
+  connect(reloadButton, &QPushButton::clicked, this, [this]() {
+    if (reload) {
+      reload();
+    }
+  });
+  actions->addWidget(reloadButton);
+  whileIdle << reloadButton;
+
   QPushButton* publishButton = new QPushButton(tr("Publish"), this);
   publishButton->setToolTip(
       tr("Put into the repository only the pictures your changes really moved. Every other picture "

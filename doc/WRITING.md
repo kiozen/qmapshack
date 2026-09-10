@@ -1,10 +1,113 @@
 # Writing QMapShack documentation
 
-You write a page and mark where pictures go. You take each picture once. The build takes them
-again later, after the program changes or on another machine, without you clicking through
-anything a second time.
+You write a page and mark where the pictures go. You take each picture once, by pointing at it.
+QMapShack takes them all again later — after the program changes, on another machine — without you
+clicking through anything a second time.
 
-## What you need
+One thing before the first time: the pictures need a build with documentation mode switched on.
+[Setting up](#setting-up) is four lines long.
+
+---
+
+## The loop
+
+```
+  ┌─────────────────────────────────────────────────────────────┐
+  │ [0]  doc/tools/shots.py doc <page>                          │
+  │                                                             │
+  │        two windows: the panel, and QMapShack in one state   │
+  │        the panel lists one row per picture the page wants   │
+  │                                                             │
+  │        reopen only after you rebuild QMapShack              │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ [1]  write the page, mark where the pictures go             │
+  │                                                             │
+  │        ![](.../name.png)  ->  one row per picture           │
+  │                                                             │
+  │        changed only text?          the panel is right       │
+  │        added or removed an image?  press Reload page        │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ [2]  pick the next row that is not taken                    │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │      does what it shows depend on something being           │
+  │      selected, loaded or opened?                            │
+  │                                                             │
+  │        no   ->  a docker, the map, a setup dialog           │
+  │        yes  ->  a track's details, profile, options         │
+  │                 => record that state once as a scenario,    │
+  │                    and pick it for the row                  │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ [3]  take it                                                │
+  │                                                             │
+  │        one widget      ->  point at it, Ctrl+Shift+F9       │
+  │        not one widget  ->  Take a region..., pick the       │
+  │                            picture, drag the rectangle      │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │      look at what came out - is it right?                   │
+  │                                                             │
+  │        yes .....................  go to [2]  next shot      │
+  │        wrong part of the window   go to [3]  take again     │
+  │        wrong state .............  go to [3]  after          │
+  │                                   recording or fixing       │
+  │                                   the scenario              │
+  │        the page was wrong ......  go to [1]  rewrite it     │
+  └─────────────────────────────────────────────────────────────┘
+
+    when no row says "not taken" any more:
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │      Take all again                                         │
+  │        proves every picture rebuilds without you            │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │      Publish                                                │
+  │        only what really changed goes into the project       │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │      commit                                                 │
+  └─────────────────────────────────────────────────────────────┘
+
+    later, the program has changed:
+    Take all again -> look at what came out different
+                   -> go to [3]
+```
+
+| | step | more, if you need it |
+|---|---|---|
+| `[0]` | open the session | [The panel and QMapShack](#the-panel-and-qmapshack) |
+| `[1]` | write the page | [Writing the page](#writing-the-page), [Picture names](#picture-names) |
+| `[2]` | pick a row | [What the rows mean](#what-the-rows-mean) |
+| | it needs a state | [Scenarios](#scenarios) |
+| `[3]` | point at it | [Taking a picture](#taking-a-picture) |
+| `[3]` | drag a rectangle | [Photographing part of a window](#photographing-part-of-a-window) |
+| | take all again | [Take all again](#take-all-again) |
+| | publish | [Publishing](#publishing) |
+| | it will not photograph | [What cannot be photographed](#what-cannot-be-photographed) |
+
+Everything below is that detail. You should not need it to start.
+
+---
+
+## Setting up
 
 Python 3, and a build with the documentation subsystem switched on:
 
@@ -13,91 +116,45 @@ cmake -S . -B build -DQMS_DOC_MODE=ON
 cmake --build build --target qmapshack
 ```
 
-It is off by default and is never in a released binary. Without it every command below is
-rejected.
+It is off by default and is never in a released binary. Without it every command here is rejected.
 
-`shots.py` looks for the program in `build/bin/`. If yours is elsewhere:
+`shots.py` looks for the program in `build/bin/`. If yours is elsewhere, pass it:
 
 ```
 doc/tools/shots.py --binary path/to/qmapshack doc
 ```
 
-**Windows needs one file copied by hand.** Pictures are rendered without a window, which needs
-Qt's `qoffscreen` platform plugin. The packaging scripts do not copy it. Take
+**Windows needs one file copied by hand.** Pictures are rendered without a window, which needs Qt's
+`qoffscreen` platform plugin, and the packaging scripts do not copy it. Take
 `platforms\qoffscreen.dll` from your Qt installation and put it beside the `qwindows.dll` you
 already have.
 
 ---
 
-## The two windows
+## The panel and QMapShack
 
 ```
 doc/tools/shots.py doc load-a-track
 ```
 
-opens:
+opens two windows:
 
-- **Documentation mode** — the panel. Pictures, scenarios, buttons. Never appears in a picture.
-- **QMapShack** — the application in one state. This is what is photographed.
+- **the panel** — your pictures, your scenarios, the buttons. Never appears in a picture.
+- **QMapShack** — the program in one state. This is what is photographed.
 
-Changing state restarts the application. It takes about seven seconds and the panel says so.
-Restarting is what makes the pictures reproducible: no state is ever undone, only built again
-from nothing.
+Changing state restarts QMapShack. It takes about seven seconds and the panel says so. Restarting is
+what makes the pictures reproducible: no state is ever undone, only built again from nothing.
 
 Closing either window ends the session.
 
----
-
-## What a picture is made of
-
-| | |
-|---|---|
-| **name** | your page asks for it; nothing else can create a picture |
-| **scenario** | the state the application is in when the picture is taken |
-| **subject** | the widget you point at, or a rectangle you drag |
-
-The panel lists one row per picture: its name, its state, and the scenario it is taken in.
-
-Most pictures are taken in **(base)** — the application as it starts. A new row already says
-`(base)`, so a picture of a docker or a dialog needs no preparation. A picture that only exists
-after you have done something needs a scenario, which you record first.
+Ctrl+Shift+F9 is the only key. Everything else is a button, because the mouse is busy pointing.
 
 ---
 
-## Setting the base up
+## Writing the page
 
-```
-doc/tools/shots.py doc
-```
-
-Arrange the dockers, size the window, set the units and the paths. Select **(base)** in the
-scenario list and press **Save config**.
-
-Every chapter starts from this. You should not have to arrange anything again.
-
-### What is fixed for you
-
-These are pinned so your desktop cannot change what a picture shows:
-
-| | |
-|---|---|
-| colour scheme | light |
-| font | DejaVu Sans 10, shipped inside QMapShack |
-| language | English |
-| pixels | one image pixel per screen pixel; a HiDPI screen gives the same size |
-| style | Fusion |
-| time zone | UTC |
-
-What is **not** fixed is the last detail of the pixels. Every system draws letters a little
-differently, so the same picture taken on two machines is never quite the same file, even though it
-looks the same. That is normal, it is nobody's mistake, and it is the whole reason **Publish**
-exists. You do not have to think about it.
-
----
-
-## Making a page
-
-**1. Write the page and mark the pictures.**
+The page is the order form. Nothing else can create a picture: the panel lists one row per `![]()`
+line and offers exactly those names, so you cannot mistype one.
 
 ```markdown
 <!-- doc/pages/load-a-track.md -->
@@ -108,38 +165,32 @@ The left side is the **Workspace**.
 ![](../images/load-a-track/workspace.png)
 ```
 
-**2. Open it.**
+The row list is read when the panel opens and when you press **Reload page**. Editing your prose
+changes nothing in the panel; adding or removing an image line does, so press Reload after that.
 
-```
-doc/tools/shots.py doc load-a-track
-```
+### Setting the base up
 
-**3. Set each picture's scenario.** Rows start at `(base)`. Leave it there unless the picture
-needs a state; then pick a scenario, recording it first if it does not exist.
+The base is QMapShack as the configuration starts it, and every chapter opens on it. Most pictures
+are taken in it, so a new row already says `(base)` and needs no preparation.
 
-**4. Take the picture.** Click the row — the application goes into that state. Point at what the
-reader should see and press **Ctrl+Shift+F9**. You are asked which part you mean (the list, the
-docker around it, the whole window) and which picture it is. Check the result and press **Keep**.
-
-**5. Press "Take all again"** when nothing is outstanding. It runs the build — one process per
-scenario, not your session — and reports how many pictures came out different. None means every
-picture can be taken again from what was recorded, which is what the page needs.
-
-**6. Press "Publish".** It works out which pictures your work really changed and puts every other
-one back exactly as the repository has it. It says *"3 picture(s) changed and are ready for a pull
-request."*
-
-**7. Commit the page, the chapter file and the pictures Publish kept, and open the pull request.**
+To change it: `doc/tools/shots.py doc`, arrange the dockers, size the window, set the units and the
+paths, select **(base)** in the scenario list and press **Save config**. You should not have to
+arrange anything again.
 
 ---
 
 ## Scenarios
 
-A scenario is a state, recorded by putting the application into it once.
+**A picture needs a scenario when what it shows depends on an input that is not always there.** A
+track's details, its elevation profile, its screen options are empty or absent until a track is
+selected. A docker, the map, a setup dialog are not — they look the same whatever is loaded.
 
-### Recording
+You do not have to work this out in advance. Take the picture; if what came out is empty or is the
+wrong thing, that is your answer.
 
-1. Press **Record...**. The application restarts in the base and recording begins.
+### Recording one
+
+1. Press **Record...**. QMapShack restarts in the base and recording begins.
 2. Do what the state is.
 3. Press **Stop recording** and name it.
 
@@ -164,20 +215,20 @@ share one scenario. A recording always starts from the base, so it is complete i
 | typed into a field | what you typed |
 
 Nothing is stored as a position on your screen. A click is stored as what it landed on. When the
-picture is taken again the application looks for the same thing; if it is not there, the build
-stops and names the step instead of photographing something else. That is what makes a recording
-survive a rebuild, another machine and another window size.
+picture is taken again QMapShack looks for the same thing; if it is not there, the run stops and
+names the step instead of photographing something else. That is what makes a recording survive a
+rebuild, another machine and another window size.
 
-**Not stored:** a hover highlight, a tooltip, an unfinished drag, and a click on something that
-does nothing by itself — a splitter handle, a scroll bar, the empty space under the last row. If
-you did only those, the panel tells you nothing was recorded.
+**Not stored:** a hover highlight, a tooltip, an unfinished drag, and a click on something that does
+nothing by itself — a splitter handle, a scroll bar, the empty space under the last row. If you did
+only those, the panel tells you nothing was recorded.
 
 A control the recorder has not been taught about records nothing at all. You find out because the
 picture does not come out, not because the recording quietly did something else.
 
 ### Changing one
 
-Click a scenario, or a picture, and the application restarts in that state and stays there.
+Click a scenario, or a picture, and QMapShack restarts in that state and stays there.
 
 | Button | Effect |
 |---|---|
@@ -189,10 +240,18 @@ Changing a picture's **Taken in** box does the same for that one picture. Both a
 what is lost: a widget you pointed at and a rectangle you dragged mean something else in another
 state.
 
-The application always starts fresh in the scenario you picked, with that scenario's settings. If
-you then change something — units, a map, the window size — the next picture uses what is on
-screen, not what the scenario stores, and the panel says so after the picture. **Save config**
-writes the current state into the scenario and brings the two back into line.
+QMapShack always starts fresh in the scenario you picked, with that scenario's settings. If you then
+change something — units, a map, the window size — the next picture uses what is on screen, not what
+the scenario stores, and the panel says so after the picture. **Save config** writes the current
+state into the scenario and brings the two back into line.
+
+---
+
+## Taking a picture
+
+Click the row: QMapShack goes into that state. Point at what the reader should see and press
+**Ctrl+Shift+F9**. You are asked which part you mean — the list, the docker around it, the whole
+window — and which picture it is. Check the result and press **Keep**.
 
 ---
 
@@ -204,8 +263,20 @@ For something that is not one widget — a docker and the map beside it, one cor
 2. Pick which picture you are taking.
 3. Drag a rectangle. Escape cancels.
 
-The rectangle is measured against the window at the size it had while you dragged. Rearrange the
-window afterwards and you must press **Save config** and take the region again.
+The rectangle is measured against the window at the size it had while you dragged. Rearrange or
+resize the window afterwards and that picture has to be dragged again — a widget survives that, a
+rectangle does not.
+
+---
+
+## Take all again
+
+Press it when no row says *not taken*. It runs the build — one process per scenario, not your
+session — and reports how many pictures came out different.
+
+None means every picture can be taken again from what was recorded, which is what the page needs. If
+one differs, it depended on something its shot does not record; look at it, and record that as a
+scenario of its own.
 
 ---
 
@@ -224,8 +295,8 @@ out different was changed by you, and yours goes in.
 What is left to commit is then just your work — usually two or three pictures, not four hundred.
 
 That is also why nothing bad happens if you forget. A picture you never published is simply not in
-the project, so you cannot commit one by accident. The panel asks anyway when you close it — but
-only when there is something to publish:
+the project, so you cannot commit one by accident. The panel asks anyway when you close it, but only
+when there is something to publish:
 
 > You have taken pictures that are not published yet. Publish them now?
 
@@ -237,12 +308,9 @@ Taking pictures and changing nothing else is not something to publish, so that d
 | took pictures, changed no state | nothing goes in, done at once |
 | recorded or changed a scenario | that chapter's pictures are taken twice, a few seconds each |
 
-After the first time it is quicker: the "already in the project" half is kept in
-`doc/images/_baseline/` until somebody else's work comes in.
-
 **One thing it cannot spot.** If a programmer changes the way QMapShack draws something, your
-pictures are out of date — but Publish uses the same QMapShack for both halves of its comparison,
-so it sees nothing different. Those have to be taken again on purpose, and that is not your job.
+pictures are out of date — but Publish uses the same QMapShack for both halves of its comparison, so
+it sees nothing different. Those have to be taken again on purpose, and that is not your job.
 
 If you prefer the command line:
 
@@ -266,9 +334,7 @@ on. It is one line of code, after which that window works for everyone.
 
 ---
 
-## Reference
-
-### Picture states in the panel
+## What the rows mean
 
 | State | Meaning | What to do |
 |---|---|---|
@@ -278,11 +344,11 @@ on. It is one line of code, after which that window works for everyone.
 | no image | the chapter has the shot, the file is gone | take it again |
 | not used | the file exists, no page asks for it | **Remove unused** deletes it |
 
-Ctrl+Shift+F9 is the only key. Everything else is a button, because the mouse is busy pointing.
+---
 
-### Picture names
+## Picture names
 
-You choose them in your page. The panel offers exactly those, so you cannot mistype one.
+You choose them in your page, and the panel offers exactly those.
 
 ```
 <chapter>/<subject>[-<variant>]
@@ -294,7 +360,29 @@ state — `track-details-graphs`.
 
 Renaming later means editing the page and the chapter file, so choose once.
 
-### Files
+---
+
+## What is fixed for you
+
+These are pinned so your desktop cannot change what a picture shows:
+
+| | |
+|---|---|
+| colour scheme | light |
+| font | DejaVu Sans 10, shipped inside QMapShack |
+| language | English |
+| pixels | one image pixel per screen pixel; a HiDPI screen gives the same size |
+| style | Fusion |
+| time zone | UTC |
+
+What is **not** fixed is the last detail of the pixels. Every system draws letters a little
+differently, so the same picture taken on two machines is never quite the same file, even though it
+looks the same. That is normal, it is nobody's mistake, and it is the whole reason
+[Publish](#publishing) exists. You do not have to think about it.
+
+---
+
+## Files
 
 ```
 doc/pages/load-a-track.md            your text — this is what says a picture exists
@@ -306,15 +394,17 @@ doc/images/_work/                    the pictures you have taken but not publish
 doc/images/_baseline/                Publish's workings
 ```
 
+Everything is named after the page. You write the first file; QMapShack writes the rest.
+
 The last two are not in git and you can delete either at any time. The panel always shows you your
 own picture when you have one, and the project's when you have not.
 
-Everything is named after the page. You write the first file; QMapShack writes the rest.
+The example data — one set of projects and one map — is shared by every chapter. If it does not suit
+your page, say so to whoever maintains the documentation setup.
 
-The example data — one set of projects and one map — is shared by every chapter. If it does not
-suit your page, say so to whoever maintains the documentation setup.
+---
 
-### Commands
+## Commands
 
 | Command | Does |
 |---|---|
@@ -322,11 +412,11 @@ suit your page, say so to whoever maintains the documentation setup.
 | `shots.py chapter [NAME]` | take one page's pictures again, without a window |
 | `shots.py build [--only GLOB]` | take every page's pictures again |
 | `shots.py reap [--delete]` | list, or remove, pictures no page uses |
-| `shots.py publish [--dry-run]` | keep only the pictures your work really changed |
+| `shots.py publish [--dry-run]` | put in only the pictures your work really changed |
 
-`chapter` and `build` name every picture they take. A picture that fails is printed under its
-page with the reason, the rest of the page is still taken, and the run ends with a count and a
-non-zero exit code. `build` carries on to the next page.
+`chapter` and `build` name every picture they take. A picture that fails is printed under its page
+with the reason, the rest of the page is still taken, and the run ends with a count and a non-zero
+exit code. `build` carries on to the next page.
 
 `inspect` and `explore` are for working on the shooter itself, not on a page.
 
@@ -341,6 +431,6 @@ non-zero exit code. `build` carries on to the next page.
 - dark mode — the pictures are light, and only light
 - other languages — the pictures are English, and only English
 
-The map is OpenStreetMap, online. The first run needs a network; the tiles are cached afterwards.
-An empty map is the network, not your page. Published pictures carry
+The map is OpenStreetMap, online. The first run needs a network; the tiles are cached afterwards. An
+empty map is the network, not your page. Published pictures carry
 *© OpenStreetMap contributors*.
