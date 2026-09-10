@@ -11,25 +11,31 @@ Writing a page:
   shots.py chapter [NAME]        take one page's pictures again, no window
   shots.py build [--only GLOB]   take every page's pictures again
   shots.py reap [--delete]       list, or remove, pictures no page uses
+  shots.py publish               put only the pictures a recipe change moved into doc/images
 
 Working on the shooter itself:
 
   shots.py inspect <id>          what a widget contains, and which of it can be set
   shots.py explore <id>          which of those controls actually change the picture
 
-`diff` and `update` are deliberately absent: they mean nothing until the output is byte-stable,
-which is the determinism stage of the plan.
+A picture's bytes depend on the machine that rendered it, so a plain compare against what is
+committed says nothing. `publish` compares this machine against itself: it renders the recipe as
+HEAD has it and the recipe as the working tree has it, and keeps only the pictures that differ
+between those two. See .notes/doc-image-publish-plan.md.
 """
 
 import argparse
 import fnmatch
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 # Pinned so two runs on any machine match. The family is the application's own - src/fonts/ is in
 # resources.qrc and a shoot or doc run registers it - because a headless run has no font database
@@ -63,8 +69,10 @@ FIXTURE_INI = REPO / "doc" / "shots" / "fixture" / "shots.ini"
 # is not injected, which is how a fixture without elevation data or POIs stays valid.
 FIXTURE_DIR = REPO / "doc" / "shots" / "fixture"
 MAPS_DIR = FIXTURE_DIR / "maps"
-# Shared by every run, writer's session and build alike, and git-ignored.
-CACHE_DIR = REPO / "doc" / "shots" / "_cache"
+# Shared by every run, writer's session and build alike, and git-ignored. Overridable, because a
+# `publish` baseline runs against a throwaway checkout of HEAD whose own cache is empty: the map is
+# an online TMS, so a run there would draw a blank canvas and every picture would look changed.
+CACHE_DIR = Path(os.environ.get("QMS_SHOTS_CACHE") or REPO / "doc" / "shots" / "_cache")
 DEM_DIR = FIXTURE_DIR / "dem"
 POI_DIR = FIXTURE_DIR / "poi"
 SHOTS_DIR = REPO / "doc" / "shots"
@@ -457,6 +465,200 @@ def cmd_reap(args):
     print(f"\nremoved {len(dead)}")
 
 
+# Baselines are renders of HEAD's recipe on this machine, kept so a second `publish` costs one
+# render instead of two. Keyed by the HEAD blob ids of everything that decides what a chapter's
+# pictures look like, so a new commit invalidates them by itself. Git-ignored.
+BASELINE_DIR = REPO / "doc" / "images" / "_baseline"
+
+
+def git(*args, binary=False):
+    """One git command in this repository, or exit saying what it was."""
+    result = subprocess.run(["git", *args], cwd=REPO, capture_output=True,
+                            text=not binary)
+    if result.returncode != 0:
+        message = (result.stderr if not binary else result.stderr.decode(errors="replace")).strip()
+        sys.exit(f"git {' '.join(args)}: {message or 'failed'}")
+    return result.stdout
+
+
+def chapter_of_recipe(path):
+    """Which chapter a file under doc/shots decides the pictures of.
+
+    `*` for the fixture, which every chapter opens on. Pages are deliberately not here: a page says
+    which pictures it wants, never what one looks like, so editing prose - the writer's commonest
+    change by far - must not cost a single render.
+    """
+    parts = PurePosixPath(path).parts
+    if parts[:3] == ("doc", "shots", "fixture"):
+        return "*"
+    if len(parts) == 3 and parts[:2] == ("doc", "shots") and parts[2].endswith(".json"):
+        return parts[2][:-len(".json")]
+    if len(parts) == 4 and parts[:2] == ("doc", "shots") and parts[3].endswith(".ini"):
+        return parts[2]
+    return None
+
+
+def touched_chapters():
+    """The chapters whose recipe the working tree changed, tracked and untracked alike."""
+    known = {path.stem for path in SHOTS_DIR.glob("*.json")}
+    changed = git("diff", "--name-only", "HEAD", "--", "doc/shots").split()
+    changed += git("ls-files", "--others", "--exclude-standard", "--", "doc/shots").split()
+
+    names = set()
+    for path in changed:
+        chapter = chapter_of_recipe(path)
+        if chapter == "*":
+            return known
+        if chapter:
+            names.add(chapter)
+    return names & known
+
+
+def baseline_key(chapter):
+    """What HEAD holds for this chapter, as one id. Empty when HEAD does not have it at all."""
+    listing = git("ls-tree", "-r", "HEAD", "--", f"doc/shots/{chapter}.json",
+                  f"doc/shots/{chapter}", "doc/shots/fixture").strip()
+    if not listing:
+        return None
+    return hashlib.sha256(listing.encode()).hexdigest()[:16]
+
+
+def head_tree(scratch):
+    """HEAD's doc/ in a directory of its own.
+
+    Through tarfile rather than a `tar` process: Windows has git without one. The tile cache is not
+    in it - it is git-ignored - so the run there is pointed back at this checkout's.
+    """
+    archive = Path(scratch) / "head.tar"
+    archive.write_bytes(git("archive", "--format=tar", "HEAD", "doc", binary=True))
+    root = Path(scratch) / "head"
+    with tarfile.open(archive) as tar:
+        tar.extractall(root)
+
+    # The recipe comes from HEAD, the tool does not. doc/tools/ is what renders a recipe, never part
+    # of one, so leaving HEAD's copy there would compare two versions of the shooter as well as two
+    # recipes - and HEAD's, not knowing QMS_SHOTS_CACHE, would render against the empty tile cache
+    # of a throwaway checkout and report every map picture as changed.
+    shutil.rmtree(root / "doc" / "tools")
+    shutil.copytree(REPO / "doc" / "tools", root / "doc" / "tools")
+    return root
+
+
+def render(binary, root, chapter, out_dir, verbose):
+    """One chapter's pictures, from whichever checkout `root` is.
+
+    The tree's own shots.py, never this one: REPO resolves from __file__, so running this file
+    against another checkout would render this checkout's recipe twice and always conclude that
+    nothing changed.
+    """
+    env = pinned_env()
+    env["QMS_SHOTS_CACHE"] = str(CACHE_DIR)
+    cmd = [sys.executable, str(root / "doc" / "tools" / "shots.py"),
+           "--binary", str(binary), "-o", str(out_dir), "chapter", chapter]
+    if verbose:
+        print(" ".join(cmd), file=sys.stderr)
+    subprocess.run(cmd, env=env, capture_output=not verbose, text=True)
+
+
+def published_image(shot_id):
+    return DEFAULT_OUT / f"{shot_id}.png"
+
+
+def restore_from_head(shot_id):
+    """Put the committed picture back, bytes for bytes.
+
+    Written from the blob rather than `git checkout --`: nothing but this one file can be reached,
+    so a wrong path can never take a writer's edited recipe away with it.
+    """
+    target = published_image(shot_id)
+    path = target.relative_to(REPO).as_posix()
+    if not git("ls-tree", "HEAD", "--", path).strip():
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(git("cat-file", "blob", f"HEAD:{path}", binary=True))
+    return True
+
+
+def same_bytes(one, other):
+    return one.is_file() and other.is_file() and one.read_bytes() == other.read_bytes()
+
+
+def cmd_publish(args):
+    """Put into doc/images only the pictures a recipe change actually moved.
+
+    Rendering is deterministic on one machine and different on every other, so what is committed
+    cannot be compared against directly. Both sides of the compare are therefore rendered here, now,
+    with the same binary: HEAD's recipe and the working tree's. Machine, Qt version and application
+    code appear in both and cancel; the recipe is the only term left.
+    """
+    chapters = sorted({path.stem for path in SHOTS_DIR.glob("*.json")} if args.all
+                      else touched_chapters())
+    binary = find_binary(args.binary)
+
+    kept, restored, added = [], [], []
+
+    # First, and without rendering anything: a picture whose chapter nobody touched can only differ
+    # from the committed one by the machine that drew it. That is the bulk of a writer's dirty tree
+    # and it costs one blob read each.
+    dirty = git("diff", "--name-only", "HEAD", "--", "doc/images").split()
+    for path in dirty:
+        shot_id = PurePosixPath(path).as_posix()[len("doc/images/"):-len(".png")]
+        if shot_id.split("/")[0] in chapters:
+            continue
+        if not args.dry_run and restore_from_head(shot_id):
+            restored.append(shot_id)
+        elif args.dry_run:
+            restored.append(shot_id)
+
+    with tempfile.TemporaryDirectory(prefix="qms-publish-") as scratch:
+        head = None
+        for chapter in chapters:
+            path, recipe = load_chapter(chapter)
+            shots = [shot["id"] for shot in recipe.get("shots", [])]
+            if not shots:
+                continue
+
+            key = baseline_key(chapter)
+            base_dir = BASELINE_DIR / chapter / key if key else None
+            if base_dir and not base_dir.is_dir():
+                head = head or head_tree(scratch)
+                print(f"{chapter}: rendering HEAD's pictures once")
+                render(binary, head, chapter, base_dir, args.verbose)
+
+            after = Path(scratch) / "after" / chapter
+            print(f"{chapter}: rendering the working tree's pictures")
+            render(binary, REPO, chapter, after, args.verbose)
+
+            for shot_id in shots:
+                fresh = after / f"{shot_id}.png"
+                if not fresh.is_file():
+                    continue
+                before = base_dir / f"{shot_id}.png" if base_dir else None
+                if before is not None and same_bytes(fresh, before):
+                    if args.dry_run or restore_from_head(shot_id):
+                        restored.append(shot_id)
+                    continue
+                if not args.dry_run:
+                    target = published_image(shot_id)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(fresh, target)
+                (added if before is None or not before.is_file() else kept).append(shot_id)
+
+    # A file rather than stdout, for the same reason inspect and explore write one: the panel needs
+    # the two lists, and the lines below are for a person and are translated nowhere.
+    if args.report:
+        Path(args.report).write_text(json.dumps(
+            {"changed": sorted(added + kept), "restored": sorted(restored)}, indent=4) + "\n")
+
+    print()
+    for shot_id in sorted(added):
+        print(f"  new      {shot_id}")
+    for shot_id in sorted(kept):
+        print(f"  changed  {shot_id}")
+    print(f"\n{len(added) + len(kept)} picture(s) changed, {len(restored)} left as committed"
+          + (" (nothing written)" if args.dry_run else ""))
+
+
 def cmd_build(args):
     """Every chapter, one after the other, one process per scenario within each.
 
@@ -555,6 +757,13 @@ def main():
     reap = sub.add_parser("reap", help="images no page references any more")
     reap.add_argument("--delete", action="store_true", help="actually remove them")
     reap.set_defaults(func=cmd_reap)
+
+    publish = sub.add_parser("publish", help="keep only the pictures a recipe change moved")
+    publish.add_argument("--all", action="store_true",
+                         help="every chapter, not only the ones the working tree touched")
+    publish.add_argument("--dry-run", action="store_true", help="say what would change, write nothing")
+    publish.add_argument("--report", metavar="FILE", help="write what changed as JSON, for the panel")
+    publish.set_defaults(func=cmd_publish)
 
     build = sub.add_parser("build", help="take every chapter's pictures again")
     build.add_argument("--only", help="glob filtering the chapter names")

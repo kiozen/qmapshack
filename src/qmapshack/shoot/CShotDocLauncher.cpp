@@ -117,6 +117,7 @@ void CShotDocLauncher::start() {
   panel->setRebindHandler([this](const QString& id, const QString& scenario) { rebindShot(id, scenario); });
   panel->setTakeRegionHandler([this]() { command("region"); });
   panel->setReapHandler([this]() { reapUnused(); });
+  panel->setPublishHandler([this]() { publishPictures(); });
   panel->setRetakeHandler([this]() { retakeChapter(); });
   panel->setClosedHandler([this]() {
     qInfo() << "doc: the panel was closed; ending the session";
@@ -660,6 +661,78 @@ void CShotDocLauncher::retakeChapter() {
   // Before the start: a start that fails does so from inside start().
   panel->setBusy(true, tr("Please wait, taking the chapter's pictures again"));
   retake->start(interpreter, args);
+}
+
+void CShotDocLauncher::publishPictures() {
+  if (nullptr != publish) {
+    return;
+  }
+  const QString& interpreter = python();
+  if (interpreter.isEmpty()) {
+    reportFailure(
+        tr("No Python interpreter was found. Start the session through shots.py, which hands the one it "
+           "runs under over as --doc-python."));
+    return;
+  }
+
+  // Which pictures it kept, rather than what it printed: the lines it prints are for a person.
+  const QString& report = QDir(scratch->path()).absoluteFilePath("publish.json");
+  QFile::remove(report);
+
+  // `--binary` is a global option of shots.py, so it comes before the sub-command.
+  const QStringList args{repo.absoluteFilePath("doc/tools/shots.py"),
+                         "--binary",
+                         QCoreApplication::applicationFilePath(),
+                         "publish",
+                         "--report",
+                         report};
+  publish = new QProcess(this);
+  publish->setProcessChannelMode(QProcess::ForwardedChannels);
+  connect(publish, &QProcess::finished, this, [this, report](int code, QProcess::ExitStatus how) {
+    publish->deleteLater();
+    publish = nullptr;
+    panel->setBusy(false, QString());
+
+    if (QProcess::NormalExit != how || 0 != code) {
+      refreshPanel(tr("The pictures could not be published. The console says why."));
+      return;
+    }
+
+    QFile in(report);
+    if (!in.open(QIODevice::ReadOnly)) {
+      refreshPanel(tr("The publish run said nothing about what it did."));
+      return;
+    }
+    const QJsonObject& said = QJsonDocument::fromJson(in.readAll()).object();
+    in.close();
+
+    // The rows the writer should look at before making the pull request: these are the only files
+    // the repository is about to carry a change for.
+    changedShots.clear();
+    const QJsonArray& changed = said["changed"].toArray();
+    for (const QJsonValue& value : changed) {
+      changedShots << value.toString();
+    }
+    const int restored = said["restored"].toArray().size();
+
+    refreshPanel(changed.isEmpty()
+                     ? tr("Nothing to publish: %n picture(s) went back to the committed one.", nullptr, restored)
+                     : tr("%n picture(s) changed and are ready for a pull request.", nullptr, changed.size()));
+  });
+  connect(publish, &QProcess::errorOccurred, this, [this](QProcess::ProcessError problem) {
+    if (QProcess::FailedToStart != problem || nullptr == publish) {
+      return;
+    }
+    const QString& why = publish->errorString();
+    publish->deleteLater();
+    publish = nullptr;
+    panel->setBusy(false, QString());
+    reportFailure(tr("shots.py could not be started.\n\n%1").arg(why));
+  });
+
+  // Before the start: a start that fails does so from inside start().
+  panel->setBusy(true, tr("Please wait, working out which pictures really changed"));
+  publish->start(interpreter, args);
 }
 
 void CShotDocLauncher::reapUnused() {

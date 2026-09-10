@@ -1015,6 +1015,8 @@ file.
   cancelled.
 - `waypoint-icon-resolution-plan.md` — 32 → 96 px waypoint icons, gated on storing `icon_t::focus`
   relative.
+- `doc-image-publish-plan.md` — a `shots.py publish` that commits only the pictures a recipe change
+  actually moved, so a writer's run stops rewriting every PNG with their machine's rendering.
 
 **The documentation subsystem is developer-only.** `shoot/` is compiled and `Qt6::Test` linked only
 under `-DQMS_DOC_MODE=ON`; `main.cpp` compiles its two call sites out with the same define, so

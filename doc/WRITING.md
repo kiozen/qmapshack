@@ -77,8 +77,7 @@ Every chapter starts from this. You should not have to arrange anything again.
 
 ### What is fixed for you
 
-A picture must come out identical on every machine, so these are pinned and your desktop cannot
-change them:
+These are pinned so your desktop cannot change what a picture shows:
 
 | | |
 |---|---|
@@ -88,6 +87,10 @@ change them:
 | pixels | one image pixel per screen pixel; a HiDPI screen gives the same size |
 | style | Fusion |
 | time zone | UTC |
+
+What is **not** fixed is the last detail of the pixels. Every system draws letters a little
+differently, so the same picture taken on two machines is never quite the same file, even though it
+looks the same. That is normal, it is nobody's mistake, and **Publish** deals with it for you.
 
 ---
 
@@ -118,10 +121,14 @@ reader should see and press **Ctrl+Shift+F9**. You are asked which part you mean
 docker around it, the whole window) and which picture it is. Check the result and press **Keep**.
 
 **5. Press "Take all again"** when nothing is outstanding. It runs the build — one process per
-scenario, not your session — and reports how many pictures came out different. None means the
-page is finished.
+scenario, not your session — and reports how many pictures came out different. None means every
+picture can be taken again from what was recorded, which is what the page needs.
 
-**6. Commit the page and the pictures together.**
+**6. Press "Publish".** It works out which pictures your work really changed and puts every other
+one back exactly as the repository has it. It says *"3 picture(s) changed and are ready for a pull
+request."*
+
+**7. Commit the page, the chapter file and the pictures Publish kept, and open the pull request.**
 
 ---
 
@@ -201,6 +208,43 @@ window afterwards and you must press **Save config** and take the region again.
 
 ---
 
+## Publishing
+
+Press **Publish** when you are done, before you commit.
+
+Every picture you take is written afresh, even when it looks exactly as it did before — see *What
+is fixed for you*. If all of those went in, the project would grow every time anybody touched a
+page, for pictures nobody changed. Publish keeps only the ones you really changed.
+
+It takes your chapter's pictures twice, both times on your own machine: once from the page as it
+already is in the project, and once from the page as you have it now. A picture that comes out the
+same both times was not changed by you, so the one already in the project is put back. A picture
+that comes out different was changed by you, and yours is kept.
+
+What is left to commit is then just your work — usually two or three pictures, not four hundred.
+
+| What you did | What Publish costs |
+|---|---|
+| changed only text | nothing to take again, done at once |
+| took pictures, changed no state | all of them go back, done at once |
+| recorded or changed a scenario | that chapter's pictures are taken twice, a few seconds each |
+
+After the first time it is quicker: the "already in the project" half is kept in
+`doc/images/_baseline/` until somebody else's work comes in.
+
+**One thing it cannot spot.** If a programmer changes the way QMapShack draws something, your
+pictures are out of date — but Publish uses the same QMapShack for both halves of its comparison,
+so it sees nothing different. Those have to be taken again on purpose, and that is not your job.
+
+If you prefer the command line:
+
+```
+doc/tools/shots.py publish --dry-run     lists what it would do, changes nothing
+doc/tools/shots.py publish
+```
+
+---
+
 ## What cannot be photographed
 
 A progress bar halfway through an import, a hover highlight, a menu the program builds and throws
@@ -250,6 +294,7 @@ doc/shots/load-a-track.json          the pictures and the scenarios
 doc/shots/load-a-track/<name>.ini    one scenario's settings
 doc/images/load-a-track/*.png        the pictures
 doc/shots/fixture/shots.ini          the base
+doc/images/_baseline/                Publish's workings; not in git, delete it any time
 ```
 
 Everything is named after the page. You write the first file; QMapShack writes the rest.
@@ -265,6 +310,7 @@ suit your page, say so to whoever maintains the documentation setup.
 | `shots.py chapter [NAME]` | take one page's pictures again, without a window |
 | `shots.py build [--only GLOB]` | take every page's pictures again |
 | `shots.py reap [--delete]` | list, or remove, pictures no page uses |
+| `shots.py publish [--dry-run]` | keep only the pictures your work really changed |
 
 `chapter` and `build` name every picture they take. A picture that fails is printed under its
 page with the reason, the rest of the page is still taken, and the run ends with a count and a

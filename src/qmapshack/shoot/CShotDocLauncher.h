@@ -121,6 +121,16 @@ class CShotDocLauncher : public QObject {
   void rebindShot(const QString& id, const QString& scenario);
   void reapUnused();
 
+  /**
+     @brief Keep only the pictures a recipe change moved, and put every other one back.
+
+     A picture's bytes depend on the machine that drew it, so the writer's tree holds a changed file
+     for every picture they took, whether or not it shows anything different. `shots.py publish`
+     renders HEAD's recipe and the working tree's with this same binary and compares those two, so
+     the machine cancels out and only the writer's own edits are left.
+   */
+  void publishPictures();
+
   /// @brief Show the picture, and enter its state when this one is not it already
   void showShot(const QString& id);
 
@@ -156,6 +166,8 @@ class CShotDocLauncher : public QObject {
   QProcess* state = nullptr;
   /// The build a retake runs; one at a time
   QProcess* retake = nullptr;
+  /// The publish run; one at a time
+  QProcess* publish = nullptr;
   QLocalServer* server = nullptr;
   QLocalSocket* channel = nullptr;
   QTemporaryDir* scratch = nullptr;

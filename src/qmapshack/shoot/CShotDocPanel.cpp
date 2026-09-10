@@ -202,6 +202,20 @@ CShotDocPanel::CShotDocPanel(const QString& chapter, QWidget* parent)
   actions->addWidget(reapButton);
   whileIdle << reapButton;
 
+  QPushButton* publishButton = new QPushButton(tr("Publish"), this);
+  publishButton->setToolTip(
+      tr("Put into the repository only the pictures your changes really moved. Every other picture "
+         "goes back to the one that is committed: a picture drawn on another machine differs in its "
+         "pixels without showing anything different, and committing those would grow the repository "
+         "for nothing."));
+  connect(publishButton, &QPushButton::clicked, this, [this]() {
+    if (publish) {
+      publish();
+    }
+  });
+  actions->addWidget(publishButton);
+  whileIdle << publishButton;
+
   layout->addLayout(actions);
 
   status = new QLabel(this);

@@ -51,9 +51,9 @@ class CShotDocPanel : public QDialog {
 
   /// What a picture's row says about it. Compared, never displayed - the label is translated.
   enum state_e {
-    eTaken,    ///< the image exists and the page uses it
-    eNoImage,  ///< the chapter knows it, no file on disk
-    eNotUsed,  ///< the image exists, no page references it
+    eTaken,         ///< the image exists and the page uses it
+    eNoImage,       ///< the chapter knows it, no file on disk
+    eNotUsed,       ///< the image exists, no page references it
     eMissing,       ///< the page references it, the chapter has no shot and there is no file either
     eUnregistered,  ///< the page references it and a file is there, but no shot took it
   };
@@ -112,6 +112,9 @@ class CShotDocPanel : public QDialog {
 
   void setReapHandler(std::function<void()> handler) { reap = handler; }
 
+  /// @brief Put into doc/images only the pictures a recipe change actually moved
+  void setPublishHandler(std::function<void()> handler) { publish = handler; }
+
   void setRetakeHandler(std::function<void()> handler) { retake = handler; }
 
   /// @brief Called when the writer closes the panel: it is the supervisor's window, so it ends the
@@ -167,6 +170,7 @@ class CShotDocPanel : public QDialog {
   std::function<void(const QString&, const QString&)> rebind;
   std::function<void()> takeRegion;
   std::function<void()> reap;
+  std::function<void()> publish;
   std::function<void()> retake;
   std::function<void()> closed;
   std::function<void()> storeLayout;
