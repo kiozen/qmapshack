@@ -60,7 +60,14 @@ SYSTEM_LOCALE = "en_US.UTF-8"
 PLATFORM_THEME = "generic"
 
 REPO = Path(__file__).resolve().parents[2]
-DEFAULT_OUT = REPO / "doc" / "images"
+# What the repository carries. Nothing writes here but `publish`: a picture drawn on one machine
+# differs from the same picture drawn on another without showing anything different, so a render
+# that landed here directly would be committed as a change by whoever forgot to publish.
+IMAGES_DIR = REPO / "doc" / "images"
+# Where every render lands instead - a writer's session, `chapter` and `build` alike. Git-ignored,
+# and emptied by `publish`, so a file in it means "taken since the last publish".
+WORK_DIR = IMAGES_DIR / "_work"
+DEFAULT_OUT = WORK_DIR
 # Copied to a scratch file for every run, so a writer's session cannot drift the settings a build
 # renders with. Both `doc` and `build` start from this one file.
 FIXTURE_INI = REPO / "doc" / "shots" / "fixture" / "shots.ini"
@@ -454,9 +461,10 @@ def cmd_reap(args):
         return
 
     for path, chapter, shot in dead:
-        image = Path(args.out) / f"{shot['id']}.png"
-        if image.is_file():
-            image.unlink()
+        # Both copies: what the repository carries and whatever this session drew.
+        for image in (published_image(shot["id"]), Path(args.out) / f"{shot['id']}.png"):
+            if image.is_file():
+                image.unlink()
         chapter["shots"] = [s for s in chapter["shots"] if s["id"] != shot["id"]]
         path.write_text(json.dumps(chapter, indent=4) + "\n")
 
@@ -561,7 +569,7 @@ def render(binary, root, chapter, out_dir, verbose):
 
 
 def published_image(shot_id):
-    return DEFAULT_OUT / f"{shot_id}.png"
+    return IMAGES_DIR / f"{shot_id}.png"
 
 
 def restore_from_head(shot_id):
@@ -593,6 +601,19 @@ def cmd_publish(args):
     """
     chapters = sorted({path.stem for path in SHOTS_DIR.glob("*.json")} if args.all
                       else touched_chapters())
+
+    # Before find_binary(), which starts the application to ask whether it has documentation mode:
+    # the answer here is a git question and needs neither. A chapter nobody touched can only be put
+    # back as it was, so with none touched there is nothing publishing could add, whatever is left
+    # lying in the work area.
+    if args.check:
+        if args.report:
+            Path(args.report).write_text(json.dumps(
+                {"wouldPublish": bool(chapters), "chapters": chapters}, indent=4) + "\n")
+        print(f"{len(chapters)} chapter(s) changed since the last commit"
+              + (": " + ", ".join(chapters) if chapters else ""))
+        return
+
     binary = find_binary(args.binary)
 
     kept, restored, added = [], [], []
@@ -649,6 +670,11 @@ def cmd_publish(args):
     if args.report:
         Path(args.report).write_text(json.dumps(
             {"changed": sorted(added + kept), "restored": sorted(restored)}, indent=4) + "\n")
+
+    if not args.dry_run:
+        # Emptied whether or not anything changed: what is left in it is by definition a picture
+        # nobody has published, and the panel asks about that on the way out.
+        shutil.rmtree(WORK_DIR, ignore_errors=True)
 
     print()
     for shot_id in sorted(added):
@@ -762,6 +788,8 @@ def main():
     publish.add_argument("--all", action="store_true",
                          help="every chapter, not only the ones the working tree touched")
     publish.add_argument("--dry-run", action="store_true", help="say what would change, write nothing")
+    publish.add_argument("--check", action="store_true",
+                         help="only say whether there is anything to publish; takes no pictures")
     publish.add_argument("--report", metavar="FILE", help="write what changed as JSON, for the panel")
     publish.set_defaults(func=cmd_publish)
 

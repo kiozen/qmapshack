@@ -119,6 +119,7 @@ void CShotDocLauncher::start() {
   panel->setReapHandler([this]() { reapUnused(); });
   panel->setPublishHandler([this]() { publishPictures(); });
   panel->setRetakeHandler([this]() { retakeChapter(); });
+  panel->setCloseRequestHandler([this]() { return mayClose(); });
   panel->setClosedHandler([this]() {
     qInfo() << "doc: the panel was closed; ending the session";
     endSession();
@@ -718,6 +719,14 @@ void CShotDocLauncher::publishPictures() {
     refreshPanel(changed.isEmpty()
                      ? tr("Nothing to publish: %n picture(s) went back to the committed one.", nullptr, restored)
                      : tr("%n picture(s) changed and are ready for a pull request.", nullptr, changed.size()));
+
+    if (closeWhenPublished) {
+      closeWhenPublished = false;
+      // Whatever it answered. A publish that failed has said so, and asking again on the way out
+      // would only trap the writer in the same box.
+      publishAsked = true;
+      panel->close();
+    }
   });
   connect(publish, &QProcess::errorOccurred, this, [this](QProcess::ProcessError problem) {
     if (QProcess::FailedToStart != problem || nullptr == publish) {
@@ -733,6 +742,63 @@ void CShotDocLauncher::publishPictures() {
   // Before the start: a start that fails does so from inside start().
   panel->setBusy(true, tr("Please wait, working out which pictures really changed"));
   publish->start(interpreter, args);
+}
+
+bool CShotDocLauncher::wouldPublishAnything() {
+  if (!CShotChapter::hasUnpublishedImages(repo)) {
+    return false;
+  }
+  const QString& interpreter = python();
+  if (interpreter.isEmpty()) {
+    // Nothing can be published without it either, but the writer is better told than left to find
+    // out on the way out.
+    return true;
+  }
+
+  const QString& report = QDir(scratch->path()).absoluteFilePath("check.json");
+  QFile::remove(report);
+
+  QProcess check;
+  check.start(interpreter, {repo.absoluteFilePath("doc/tools/shots.py"), "publish", "--check", "--report", report});
+  // It reads git and writes one small file, so it is over in well under a second. A close is not
+  // worth an event loop of its own.
+  if (!check.waitForFinished(10000) || QProcess::NormalExit != check.exitStatus() || 0 != check.exitCode()) {
+    return true;
+  }
+
+  QFile in(report);
+  if (!in.open(QIODevice::ReadOnly)) {
+    return true;
+  }
+  const QJsonObject& said = QJsonDocument::fromJson(in.readAll()).object();
+  return said["wouldPublish"].toBool();
+}
+
+bool CShotDocLauncher::mayClose() {
+  if (nullptr != publish) {
+    return false;
+  }
+  if (publishAsked || !wouldPublishAnything()) {
+    return true;
+  }
+
+  const int answer = QMessageBox::question(
+      panel, tr("Publish before closing?"),
+      tr("You have taken pictures that are not published yet.\n\nUnpublished pictures are not part of "
+         "your work: the repository keeps the ones it already has. Publish them now?"),
+      QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel, QMessageBox::Yes);
+
+  if (QMessageBox::Cancel == answer) {
+    return false;
+  }
+  if (QMessageBox::No == answer) {
+    publishAsked = true;
+    return true;
+  }
+
+  closeWhenPublished = true;
+  publishPictures();
+  return false;
 }
 
 void CShotDocLauncher::reapUnused() {
@@ -772,7 +838,9 @@ void CShotDocLauncher::reapUnused() {
   }
 
   for (const QString& id : std::as_const(dropped)) {
-    QFile::remove(CShotChapter::imagePath(repo, id));
+    // Both copies: what the repository carries, and whatever this session drew.
+    QFile::remove(CShotChapter::publishedImagePath(repo, id));
+    QFile::remove(CShotChapter::workImagePath(repo, id));
   }
 
   file["shots"] = keep;

@@ -20,8 +20,10 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QDirIterator>
 #include <QDockWidget>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QRect>
@@ -276,8 +278,22 @@ QString CShotChapter::chapterPath(const QDir& repo, const QString& chapter) {
   return dir.absoluteFilePath(chapter + ".json");
 }
 
-QString CShotChapter::imagePath(const QDir& repo, const QString& id) {
+QString CShotChapter::publishedImagePath(const QDir& repo, const QString& id) {
   return QDir(repo.absoluteFilePath("doc/images")).absoluteFilePath(id + ".png");
+}
+
+QString CShotChapter::workImagePath(const QDir& repo, const QString& id) {
+  return QDir(repo.absoluteFilePath("doc/images/_work")).absoluteFilePath(id + ".png");
+}
+
+QString CShotChapter::imagePath(const QDir& repo, const QString& id) {
+  const QString& own = workImagePath(repo, id);
+  return QFileInfo::exists(own) ? own : publishedImagePath(repo, id);
+}
+
+bool CShotChapter::hasUnpublishedImages(const QDir& repo) {
+  QDirIterator walk(repo.absoluteFilePath("doc/images/_work"), {"*.png"}, QDir::Files, QDirIterator::Subdirectories);
+  return walk.hasNext();
 }
 
 QString CShotChapter::scenarioConfigPath(const QDir& repo, const QString& chapter, const QString& scenario) {

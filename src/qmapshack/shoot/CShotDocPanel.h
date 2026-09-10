@@ -117,6 +117,15 @@ class CShotDocPanel : public QDialog {
 
   void setRetakeHandler(std::function<void()> handler) { retake = handler; }
 
+  /**
+     @brief Asked before a close is accepted; false keeps the panel open.
+
+     Closing ends the session, so a picture taken and not published would be lost without the
+     writer being told. The handler is what puts that question, and it answers false while it is
+     doing something about it.
+   */
+  void setCloseRequestHandler(std::function<bool()> handler) { closeRequest = handler; }
+
   /// @brief Called when the writer closes the panel: it is the supervisor's window, so it ends the
   ///        session and the state process with it
   void setClosedHandler(std::function<void()> handler) { closed = handler; }
@@ -172,6 +181,7 @@ class CShotDocPanel : public QDialog {
   std::function<void()> reap;
   std::function<void()> publish;
   std::function<void()> retake;
+  std::function<bool()> closeRequest;
   std::function<void()> closed;
   std::function<void()> storeLayout;
 

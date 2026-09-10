@@ -122,15 +122,33 @@ during development, not a hypothetical.
 
 ## Left to do
 
-1. A shot removed from the chapter file leaves an orphan image — `reap` covers that; check the two
-   do not fight.
-2. Optional, independent: pin fontconfig in `pinned_env()` the way the platform theme is pinned. It
+1. Optional, independent: pin fontconfig in `pinned_env()` the way the platform theme is pinned. It
    removes one noise term and makes a writer's session and the build agree on one machine. Nothing
    above needs it.
+2. A CI check would catch the case `publish` cannot see - a code change that repaints something -
+   by rendering base and PR on one machine. Not viable here: a free GitHub runner would have to
+   build Qt6, GDAL, PROJ and Routino in documentation mode first.
 
-No restructuring of `doc/` was needed. `publish` writes nothing outside `doc/images/`, so the writer
-keeps rendering where they render today and no C++ path changes - which is what lets the command be
-used without rebuilding.
+## The work area
+
+`doc/images/` is written by `publish` and by nothing else. Every render - a writer's session,
+`chapter`, `build` - lands in `doc/images/_work/`, which is git-ignored, and `publish` empties it
+once it has taken what it wants.
+
+That is what makes forgetting harmless. Rendering into the tracked directory leaves a changed file
+for every picture taken, so a writer who never publishes commits noise and nobody notices. Rendering
+beside it leaves nothing to commit at all: forgetting costs a picture that was not updated, which is
+visible, instead of a change that was not made, which is not.
+
+`CShotChapter::imagePath()` resolves the work copy first and the published one after, so the panel
+shows the writer their own picture where they have one and the project's where they have not.
+`hasUnpublishedImages()` is one file in the work area, which is exactly "taken since the last
+publish" because `publish` empties it. That alone is not enough to ask the closing question with:
+taking a chapter's pictures again without editing anything leaves nine of them there and can
+produce nothing, because an untouched chapter is only ever put back the way it was. So
+`wouldPublishAnything()` adds the git half through `shots.py publish --check`, which answers
+"is any chapter's recipe different from the last commit" in 0.06 s without taking a picture or
+starting the application.
 
 ## Verification
 

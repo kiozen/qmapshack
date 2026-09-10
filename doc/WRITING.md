@@ -90,7 +90,8 @@ These are pinned so your desktop cannot change what a picture shows:
 
 What is **not** fixed is the last detail of the pixels. Every system draws letters a little
 differently, so the same picture taken on two machines is never quite the same file, even though it
-looks the same. That is normal, it is nobody's mistake, and **Publish** deals with it for you.
+looks the same. That is normal, it is nobody's mistake, and it is the whole reason **Publish**
+exists. You do not have to think about it.
 
 ---
 
@@ -212,21 +213,28 @@ window afterwards and you must press **Save config** and take the region again.
 
 Press **Publish** when you are done, before you commit.
 
-Every picture you take is written afresh, even when it looks exactly as it did before — see *What
-is fixed for you*. If all of those went in, the project would grow every time anybody touched a
-page, for pictures nobody changed. Publish keeps only the ones you really changed.
+The pictures you take are kept aside, not put straight into the project. Publish is what puts them
+in — and only the ones you really changed.
 
 It takes your chapter's pictures twice, both times on your own machine: once from the page as it
 already is in the project, and once from the page as you have it now. A picture that comes out the
-same both times was not changed by you, so the one already in the project is put back. A picture
-that comes out different was changed by you, and yours is kept.
+same both times was not changed by you, and the project keeps the one it has. A picture that comes
+out different was changed by you, and yours goes in.
 
 What is left to commit is then just your work — usually two or three pictures, not four hundred.
+
+That is also why nothing bad happens if you forget. A picture you never published is simply not in
+the project, so you cannot commit one by accident. The panel asks anyway when you close it — but
+only when there is something to publish:
+
+> You have taken pictures that are not published yet. Publish them now?
+
+Taking pictures and changing nothing else is not something to publish, so that does not ask.
 
 | What you did | What Publish costs |
 |---|---|
 | changed only text | nothing to take again, done at once |
-| took pictures, changed no state | all of them go back, done at once |
+| took pictures, changed no state | nothing goes in, done at once |
 | recorded or changed a scenario | that chapter's pictures are taken twice, a few seconds each |
 
 After the first time it is quicker: the "already in the project" half is kept in
@@ -292,10 +300,14 @@ Renaming later means editing the page and the chapter file, so choose once.
 doc/pages/load-a-track.md            your text — this is what says a picture exists
 doc/shots/load-a-track.json          the pictures and the scenarios
 doc/shots/load-a-track/<name>.ini    one scenario's settings
-doc/images/load-a-track/*.png        the pictures
+doc/images/load-a-track/*.png        the pictures, as the project has them
 doc/shots/fixture/shots.ini          the base
-doc/images/_baseline/                Publish's workings; not in git, delete it any time
+doc/images/_work/                    the pictures you have taken but not published
+doc/images/_baseline/                Publish's workings
 ```
+
+The last two are not in git and you can delete either at any time. The panel always shows you your
+own picture when you have one, and the project's when you have not.
 
 Everything is named after the page. You write the first file; QMapShack writes the rest.
 

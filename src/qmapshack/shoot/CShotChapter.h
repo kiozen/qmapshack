@@ -50,8 +50,20 @@ const QString kBaseScenario = QStringLiteral("-");
 /// @brief `doc/shots/<chapter>.json`; the directory is created
 QString chapterPath(const QDir& repo, const QString& chapter);
 
-/// @brief `doc/images/<id>.png`
+/// @brief `doc/images/<id>.png` - what the repository carries. Only Publish writes here: a render
+///        that landed here directly would be committed by whoever forgot to publish, and a picture
+///        drawn on another machine differs without showing anything different.
+QString publishedImagePath(const QDir& repo, const QString& id);
+
+/// @brief `doc/images/_work/<id>.png` - where this session's pictures go. Git-ignored, and emptied
+///        by Publish, so a file here means one taken since the last publish.
+QString workImagePath(const QDir& repo, const QString& id);
+
+/// @brief The picture to show: this session's if it took one, otherwise what the repository carries
 QString imagePath(const QDir& repo, const QString& id);
+
+/// @return Whether any picture has been taken since the last publish
+bool hasUnpublishedImages(const QDir& repo);
 
 /// @brief `doc/shots/<chapter>/<scenario>.ini`; the directory is created
 QString scenarioConfigPath(const QDir& repo, const QString& chapter, const QString& scenario);

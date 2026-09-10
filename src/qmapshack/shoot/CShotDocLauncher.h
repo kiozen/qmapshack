@@ -131,6 +131,25 @@ class CShotDocLauncher : public QObject {
    */
   void publishPictures();
 
+  /**
+     @brief Whether the panel may close, and the question that decides it.
+
+     A picture taken and not published is not part of the writer's work - the repository keeps the
+     one it already has - so ending the session on top of one loses it silently.
+   */
+  bool mayClose();
+
+  /**
+     @brief Whether publishing now would put anything into the repository.
+
+     Two conditions, cheapest first: a picture waiting in the work area, and a chapter whose recipe
+     differs from the last commit. Without the second, taking pictures and changing nothing else
+     put the closing question up every time - a chapter nobody edited can only be put back the way
+     it was. `shots.py publish --check` answers the git half; it takes no pictures and does not
+     start the application.
+   */
+  bool wouldPublishAnything();
+
   /// @brief Show the picture, and enter its state when this one is not it already
   void showShot(const QString& id);
 
@@ -168,6 +187,10 @@ class CShotDocLauncher : public QObject {
   QProcess* retake = nullptr;
   /// The publish run; one at a time
   QProcess* publish = nullptr;
+  /// The writer answered the closing question with "publish first"; close once it has finished
+  bool closeWhenPublished = false;
+  /// Asked once. A publish that failed must not put the same question again on the way out.
+  bool publishAsked = false;
   QLocalServer* server = nullptr;
   QLocalSocket* channel = nullptr;
   QTemporaryDir* scratch = nullptr;

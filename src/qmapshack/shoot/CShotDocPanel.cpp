@@ -352,6 +352,10 @@ void CShotDocPanel::resizeEvent(QResizeEvent* event) {
 }
 
 void CShotDocPanel::closeEvent(QCloseEvent* event) {
+  if (closeRequest && !closeRequest()) {
+    event->ignore();
+    return;
+  }
   event->accept();
   if (closed) {
     closed();

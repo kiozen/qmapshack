@@ -304,7 +304,8 @@ CShotDocMode::CShotDocMode(const QDir& repo, const QString& chapter, const QStri
       // cannot tell from a state it meant.
       ownScenario(CShotChapter::kBaseScenario == scenario ? QString() : scenario),
       repo(repo) {
-  writer = new CShotWriter(QDir(repo.absoluteFilePath("doc/images")), "en");
+  // Not doc/images: only Publish writes there. See CShotChapter::workImagePath().
+  writer = new CShotWriter(QDir(repo.absoluteFilePath("doc/images/_work")), "en");
   ctx = new CShotContext(*writer, "en");
   // The state a scenario builds stands after the picture: this process exists to show the writer
   // that state and is thrown away with it. A build clears instead, so one shot leaves nothing for
@@ -782,9 +783,7 @@ QWidget* CShotDocMode::chooseLivePart(CMainWindow* main) const {
   return parts.value(index, main);
 }
 
-QString CShotDocMode::imagePath(const QString& id) const {
-  return QDir(repo.absoluteFilePath("doc/images")).absoluteFilePath(id + ".png");
-}
+QString CShotDocMode::imagePath(const QString& id) const { return CShotChapter::imagePath(repo, id); }
 
 bool CShotDocMode::confirmResult(const QString& id) const {
   const QImage image(imagePath(id));
