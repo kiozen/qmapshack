@@ -19,12 +19,14 @@
 #include <QNetworkProxyFactory>
 #include <QtPlugin>
 #include <QtWidgets>
+#include <optional>
 
 #include "CMainWindow.h"
 #include "CSingleInstanceProxy.h"
 #include "helpers/CSettings.h"
 #include "setup/CAppOpts.h"
 #include "setup/IAppSetup.h"
+#include "shoot/CShotEntry.h"
 #include "theme/CQmsStyle.h"
 #include "theme/CUiTheme.h"
 #include "version.h"
@@ -41,6 +43,11 @@ int main(int argc, char** argv) {
   for (int i = 0; i < argCnt; i++) {
     argVal[i] = argv[i];
   }
+
+  // Both before QApplication: it reads QT_QPA_PLATFORMTHEME as it comes up, and its own fatals have
+  // to reach a console. getPlatformInstance() only constructs the platform object.
+  CShotEntry::pinEnvironment(argc, argv);
+  IAppSetup::getPlatformInstance()->attachParentConsole(argc, argv);
 
   QApplication app(argc, argv);
   CQmsStyle::install();
@@ -78,11 +85,21 @@ int main(int argc, char** argv) {
   // setup default proxy
   QNetworkProxyFactory::setUseSystemConfiguration(true);
 
-  // make sure this is the one and only instance on the system
-  CSingleInstanceProxy s(qlOpts->arguments);
+  // CMainWindow is what reads the cache root and opens the workspace database.
+  const bool documentation = CShotEntry::isDocRun(*qlOpts);
+  if (!CShotEntry::prepare(*qlOpts)) {
+    return 1;
+  }
+
+  // The proxy hands the arguments to a running QMapShack and exits; a documentation run must not.
+  // Scoped, because it has to outlive the window.
+  std::optional<CSingleInstanceProxy> singleInstance;
+  if (!documentation) {
+    singleInstance.emplace(qlOpts->arguments);
+  }
 
   QPointer<QSplashScreen> splash = nullptr;
-  if (!qlOpts->nosplash) {
+  if (!qlOpts->nosplash && !documentation) {
     QPixmap pic(":/pics/splash.png");
     QPainter p(&pic);
     QFont f = p.font();

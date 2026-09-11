@@ -25,6 +25,15 @@
 class IAppSetup {
  public:
   static IAppSetup* getPlatformInstance();
+
+  /**
+     @brief Take over the console the application was started from. Before QApplication.
+
+     Windows only: the binary is linked for the GUI subsystem, owns no console and drops every log
+     line and parser error.
+   */
+  virtual void attachParentConsole(int argc, char** argv);
+
   virtual void initQMapShack() = 0;
   void initLogHandler();
   void processArguments();

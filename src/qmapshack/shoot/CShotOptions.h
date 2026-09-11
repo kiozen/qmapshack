@@ -1,0 +1,60 @@
+/**********************************************************************************************
+   Copyright (C) 2026 Oliver Eichler <oliver.eichler@gmx.de>
+
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+**********************************************************************************************/
+
+#ifndef CSHOTOPTIONS_H
+#define CSHOTOPTIONS_H
+
+#include <QString>
+
+class QCommandLineParser;
+
+/**
+   @brief The documentation subsystem's command line switches.
+
+   Two implementations, selected by the build; the stub defines none, so a user's build rejects them
+   through QCommandLineParser itself.
+ */
+class CShotOptions {
+ public:
+  /** @brief Empty throughout in a build without the subsystem. */
+  struct opts_t {
+    QString shootDir;      /**< --shoot, where the images go */
+    QString shootTarget;   /**< --shoot-target, the page */
+    QString shootScenario; /**< --shoot-scenario */
+    QString shootOnly;     /**< --only, an id glob */
+    QString docDir;        /**< --doc, the checkout to record into */
+    QString docPage;       /**< --doc-page, what F9 appends to */
+    QString docScenario;   /**< --doc-scenario; only the state process has one */
+    QString docChannel;    /**< --doc-channel, where the state process reports back to */
+    QString docPython;     /**< --doc-python */
+    QString docScreen;     /**< --doc-screen, where the panel belongs */
+    QString colorScheme;   /**< --color-scheme, light or dark; empty follows the desktop */
+  };
+
+  /** @brief Before QCommandLineParser::process(). */
+  static void addOptions(QCommandLineParser& parser);
+
+  /** @brief After QCommandLineParser::process(). */
+  static opts_t read(const QCommandLineParser& parser);
+
+ private:
+  static void add(QCommandLineParser& parser, const QString& name, const QString& description, const QString& valueName,
+                  const QString& defaultValue = QString());
+};
+
+#endif  // CSHOTOPTIONS_H

@@ -1,5 +1,5 @@
 /**********************************************************************************************
-   Copyright (C) 2015 Ivo Kronenberg <>
+   Copyright (C) 2026 Oliver Eichler <oliver.eichler@gmx.de>
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,27 +16,9 @@
 
 **********************************************************************************************/
 
-#ifndef CAPPSETUPWIN_H
-#define CAPPSETUPWIN_H
+#include "shoot/CShotOptions.h"
 
-#include <QtCore>
+/// No switch is defined, so QCommandLineParser rejects them all and every value stays empty.
+void CShotOptions::addOptions(QCommandLineParser&) {}
 
-#include "setup/IAppSetup.h"
-
-class CAppSetupWin : public IAppSetup {
-  Q_DECLARE_TR_FUNCTIONS(CAppSetupWin)
- public:
-  void attachParentConsole(int argc, char** argv) override;
-  void initQMapShack() override;
-  QString routinoPath(QString xmlFile) override;
-  QString defaultCachePath() override;
-  QString userDataPath(QString subdir = 0) override;
-  QString logDir() override;
-  QString findExecutable(const QString& name) override;
-  QString helpFile() override;
-  bool setLock() override;
-
-  QByteArray path;
-};
-
-#endif  // CAPPSETUPWIN_H
+CShotOptions::opts_t CShotOptions::read(const QCommandLineParser&) { return opts_t(); }

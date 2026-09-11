@@ -926,6 +926,11 @@ set( RCS
     resources.qrc
 )
 
+# Separate, so a user's binary carries no 1.5 MB of families only a documentation run loads.
+if(QMS_DOC_MODE)
+    list(APPEND RCS shoot/fonts.qrc)
+endif()
+
 ###############################################################################################
 # Some Qt magic
 ###############################################################################################
@@ -1047,6 +1052,23 @@ if(Qt6DBus_FOUND)
 else(Qt6DBus_FOUND)
     set(DBUS_LIB)
 endif(Qt6DBus_FOUND)
+
+# Both branches implement the same two headers, so nothing else knows which one it got.
+if(QMS_DOC_MODE)
+    target_sources(${APPLICATION_NAME} PRIVATE
+        shoot/CShotEntry.cpp
+        shoot/CShotEntry.h
+        shoot/CShotOptions.cpp
+        shoot/CShotOptions.h
+    )
+else()
+    target_sources(${APPLICATION_NAME} PRIVATE
+        shoot/CShotEntry.h
+        shoot/CShotEntryStub.cpp
+        shoot/CShotOptions.h
+        shoot/CShotOptionsStub.cpp
+    )
+endif()
 
 target_link_libraries(${APPLICATION_NAME} PRIVATE
     qms_options
