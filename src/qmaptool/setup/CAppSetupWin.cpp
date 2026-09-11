@@ -19,9 +19,9 @@
 #include <QtSystemDetection>
 #if defined(Q_OS_WIN32)
 
-#include <errhandlingapi.h>
-#include <fileapi.h>
-#include <winbase.h>
+// windows.h stays the only Win32 include: clang-format sorts an include block alphabetically, and
+// MSVC needs windows.h ahead of every other Win32 header or winnt.h fails with "No Target
+// Architecture".
 #include <windows.h>
 
 #include <QAbstractNativeEventFilter>
