@@ -16,13 +16,38 @@
 
 **********************************************************************************************/
 
-#include "shoot/CShotEntry.h"
+#ifndef CSHOTRUNNER_H
+#define CSHOTRUNNER_H
 
-/// A build without the documentation subsystem.
-bool CShotEntry::isDocRun(const CAppOpts&) { return false; }
+#include <QObject>
+#include <QString>
 
-void CShotEntry::pinEnvironment(int, char**) {}
+#include "shoot/CShotOptions.h"
 
-bool CShotEntry::prepare(const CAppOpts&) { return true; }
+class QWidget;
 
-std::optional<qint32> CShotEntry::run(const CAppOpts&, CMainWindow&) { return std::nullopt; }
+/** @brief Takes the shots `--shoot` asks for, then quits. */
+class CShotRunner : public QObject {
+  Q_OBJECT
+ public:
+  CShotRunner(const CShotOptions::opts_t& opts, QWidget* window);
+  virtual ~CShotRunner() = default;
+
+  /** @brief Queue the run: the main window finishes initialising on timers. */
+  void start();
+
+  qint32 getFailures() const { return failures; }
+
+ private slots:
+  void slotRun();
+
+ private:
+  QWidget* window;
+  QString outDir;
+  QString target;
+  QString only;
+  QString scenario;
+  qint32 failures = 0;
+};
+
+#endif  // CSHOTRUNNER_H
