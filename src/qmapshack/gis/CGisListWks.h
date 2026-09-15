@@ -62,6 +62,9 @@ class CGisListWks : public QTreeWidget {
 
   bool hasDeviceSupport() const { return deviceWatcher != nullptr; }
 
+  /** @return true once slotLoadWorkspace() has run, whether it restored a project or not */
+  bool isWorkspaceLoaded() const { return workspaceLoaded; }
+
  public slots:
   void slotLoadWorkspace();
   void slotCopyProject();
@@ -243,6 +246,7 @@ class CGisListWks : public QTreeWidget {
 
   bool saveOnExit = true;
   qint32 saveEvery = 5;
+  bool workspaceLoaded = false;
 
   IDeviceWatcher* deviceWatcher = nullptr;
 
