@@ -20,10 +20,12 @@
 #define CSHOTENTRY_H
 
 #include <QString>
+#include <memory>
 #include <optional>
 
 class CAppOpts;
 class CMainWindow;
+class QApplication;
 
 /** @brief All main() knows about the documentation subsystem; the stub build answers false and does nothing. */
 class CShotEntry {
@@ -37,6 +39,13 @@ class CShotEntry {
      Not on Windows, which has no desktop theme.
    */
   static void pinEnvironment(int argc, char** argv);
+
+  /**
+     @brief The application object, created before anything else.
+
+     A documentation run gets a subclass that wraps input delivery in notify(); any other run a plain QApplication.
+   */
+  static std::unique_ptr<QApplication> createApplication(int& argc, char** argv);
 
   /**
      @brief Redirect a documentation run's data and pin its appearance. Once, before CMainWindow.
@@ -59,6 +68,9 @@ class CShotEntry {
   static void registerFonts();
 
   static void pinAppearance(const QString& colorScheme);
+
+  /** @return true when the raw @p argv asks for a shoot or documentation run */
+  static bool isDocArgv(int argc, char** argv);
 };
 
 #endif  // CSHOTENTRY_H

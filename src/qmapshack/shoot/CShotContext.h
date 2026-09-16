@@ -26,10 +26,13 @@
 
 #include "gis/IGisItem.h"
 
+class CCanvas;
 class CGisItemOvlArea;
 class CGisItemRte;
 class CGisItemTrk;
 class CGisItemWpt;
+class CGisListWks;
+class CMainWindow;
 class CShotWriter;
 class IGisProject;
 class QWidget;
@@ -54,6 +57,15 @@ class CShotContext {
 
   /** @brief The next picture of the sequence `<id>.0000`, `<id>.0001`, ...; false when none was written. */
   bool frame(QWidget* w, const QSize& size = QSize());
+
+  /** @return the main window, nullptr before it is constructed */
+  CMainWindow* mainWindow() const;
+
+  /** @return the canvas of the map view in front, nullptr when there is none */
+  CCanvas* canvas() const;
+
+  /** @return the workspace tree, nullptr before the main window is constructed */
+  const CGisListWks* wksList() const;
 
   /** The fixture's items by role; nullptr until CShotFixture has loaded them. */
   IGisProject* project() const { return fixture.project; }
