@@ -27,6 +27,7 @@
 #include "gis/CGisListWks.h"
 #include "map/CMapDraw.h"
 #include "setup/CAppOpts.h"
+#include "shoot/CShotApplication.h"
 #include "shoot/CShotRunner.h"
 #include "theme/CQmsStyle.h"
 #include "theme/CUiTheme.h"
@@ -44,18 +45,31 @@ std::optional<qint32> CShotEntry::run(const CAppOpts& opts, CMainWindow& window)
   return qMin(runner->getFailures(), 255);
 }
 
+bool CShotEntry::isDocArgv(int argc, char** argv) {
+  for (int i = 1; i < argc; ++i) {
+    const QByteArray arg(argv[i]);
+    if (arg.startsWith("--shoot") || arg.startsWith("--doc")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+std::unique_ptr<QApplication> CShotEntry::createApplication(int& argc, char** argv) {
+  if (isDocArgv(argc, argv)) {
+    return std::make_unique<CShotApplication>(argc, argv);
+  }
+  return std::make_unique<QApplication>(argc, argv);
+}
+
 void CShotEntry::pinEnvironment(int argc, char** argv) {
 #ifdef Q_OS_WIN
   // `generic` crashes the QApplication constructor on Windows.
   Q_UNUSED(argc)
   Q_UNUSED(argv)
 #else
-  for (int i = 1; i < argc; ++i) {
-    const QByteArray arg(argv[i]);
-    if (arg.startsWith("--shoot") || arg.startsWith("--doc")) {
-      qputenv("QT_QPA_PLATFORMTHEME", "generic");
-      return;
-    }
+  if (isDocArgv(argc, argv)) {
+    qputenv("QT_QPA_PLATFORMTHEME", "generic");
   }
 #endif
 }
@@ -78,6 +92,8 @@ bool CShotEntry::prepare(const CAppOpts& opts) {
   }
 
   qDebug() << "documentation run: platform theme" << qgetenv("QT_QPA_PLATFORMTHEME");
+  // -d traces every user input frame.
+  CShotApplication::setTrace(opts.debug);
   pinAppearance(opts.doc.colorScheme);
   registerFonts();
 
