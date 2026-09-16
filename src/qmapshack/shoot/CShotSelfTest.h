@@ -16,19 +16,19 @@
 
 **********************************************************************************************/
 
-#include <QApplication>
+#ifndef CSHOTSELFTEST_H
+#define CSHOTSELFTEST_H
 
-#include "shoot/CShotEntry.h"
+#include <QtGlobal>
 
-/// A build without the documentation subsystem.
-bool CShotEntry::isDocRun(const CAppOpts&) { return false; }
+class CShotContext;
 
-void CShotEntry::pinEnvironment(int, char**) {}
+/**
+   @brief Recorder self test: real window-system input is recorded, compared with the expected steps, and replayed.
+ */
+namespace CShotSelfTest {
+/** @return the number of failed cases */
+qint32 run(CShotContext& ctx);
+}  // namespace CShotSelfTest
 
-std::unique_ptr<QApplication> CShotEntry::createApplication(int& argc, char** argv) {
-  return std::make_unique<QApplication>(argc, argv);
-}
-
-bool CShotEntry::prepare(const CAppOpts&) { return true; }
-
-std::optional<qint32> CShotEntry::run(const CAppOpts&, CMainWindow&) { return std::nullopt; }
+#endif  // CSHOTSELFTEST_H

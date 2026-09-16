@@ -27,17 +27,18 @@ class QCommandLineParser;
 class CShotOptions {
  public:
   struct opts_t {
-    QString shootDir;      /**< --shoot, where the images go */
-    QString shootTarget;   /**< --shoot-target, the page */
-    QString shootScenario; /**< --shoot-scenario */
-    QString shootOnly;     /**< --only, an id glob */
-    QString docDir;        /**< --doc, the checkout to record into */
-    QString docPage;       /**< --doc-page, what F9 appends to */
-    QString docScenario;   /**< --doc-scenario; only the state process has one */
-    QString docChannel;    /**< --doc-channel, where the state process reports back to */
-    QString docPython;     /**< --doc-python */
-    QString docScreen;     /**< --doc-screen, where the panel belongs */
-    QString colorScheme;   /**< --color-scheme, light or dark; empty follows the desktop */
+    QString shootDir;           /**< --shoot, where the images go */
+    QString shootTarget;        /**< --shoot-target, the page */
+    QString shootScenario;      /**< --shoot-scenario */
+    QString shootOnly;          /**< --only, an id glob */
+    QString docDir;             /**< --doc, the checkout to record into */
+    QString docPage;            /**< --doc-page, what F9 appends to */
+    QString docScenario;        /**< --doc-scenario; only the state process has one */
+    QString docChannel;         /**< --doc-channel, where the state process reports back to */
+    QString docPython;          /**< --doc-python */
+    QString docScreen;          /**< --doc-screen, where the panel belongs */
+    QString colorScheme;        /**< --color-scheme, light or dark; empty follows the desktop */
+    bool shootSelfTest = false; /**< --shoot-selftest, the recorder's cases instead of a page */
   };
 
   static void addOptions(QCommandLineParser& parser);
@@ -47,6 +48,8 @@ class CShotOptions {
  private:
   static void add(QCommandLineParser& parser, const QString& name, const QString& description, const QString& valueName,
                   const QString& defaultValue = QString());
+
+  static void addFlag(QCommandLineParser& parser, const QString& name, const QString& description);
 };
 
 #endif  // CSHOTOPTIONS_H

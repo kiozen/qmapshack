@@ -16,19 +16,22 @@
 
 **********************************************************************************************/
 
-#include <QApplication>
+#ifndef CSHOTINPUT_H
+#define CSHOTINPUT_H
 
-#include "shoot/CShotEntry.h"
+#include <QString>
 
-/// A build without the documentation subsystem.
-bool CShotEntry::isDocRun(const CAppOpts&) { return false; }
+class QWidget;
 
-void CShotEntry::pinEnvironment(int, char**) {}
+/**
+   @brief What typing into an input leaves in it, and which inputs a replay cannot reach.
+ */
+namespace CShotInput {
+/** @return true for an item view's cell editor, deleted when the edit ends; an index widget is none */
+bool isCellEditor(const QWidget* input);
 
-std::unique_ptr<QApplication> CShotEntry::createApplication(int& argc, char** argv) {
-  return std::make_unique<QApplication>(argc, argv);
-}
+/** @return what a `key` step types into @p input once all of it is selected; a spin box's without prefix and suffix */
+QString keyValueOf(const QWidget* input);
+}  // namespace CShotInput
 
-bool CShotEntry::prepare(const CAppOpts&) { return true; }
-
-std::optional<qint32> CShotEntry::run(const CAppOpts&, CMainWindow&) { return std::nullopt; }
+#endif  // CSHOTINPUT_H

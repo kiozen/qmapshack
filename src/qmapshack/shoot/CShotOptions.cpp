@@ -26,6 +26,10 @@ void CShotOptions::add(QCommandLineParser& parser, const QString& name, const QS
   parser.addOption(option);
 }
 
+void CShotOptions::addFlag(QCommandLineParser& parser, const QString& name, const QString& description) {
+  parser.addOption(QCommandLineOption(QStringList() << name, description));
+}
+
 void CShotOptions::addOptions(QCommandLineParser& parser) {
   // Not translated: developer-only.
   add(parser, "shoot", "Render the images of a page into the given directory.", "dir");
@@ -48,6 +52,9 @@ void CShotOptions::addOptions(QCommandLineParser& parser) {
       "geometry carries a position on the whole desktop.",
       "name");
   add(parser, "color-scheme", "Pin the colour scheme instead of following the desktop: light or dark.", "name");
+  addFlag(parser, "shoot-selftest",
+          "Run the recorder's own cases against this application instead of taking a page's shots. Needs --shoot and "
+          "--shoot-target, whose directory the fixture is loaded from.");
 }
 
 CShotOptions::opts_t CShotOptions::read(const QCommandLineParser& parser) {
@@ -63,5 +70,6 @@ CShotOptions::opts_t CShotOptions::read(const QCommandLineParser& parser) {
   opts.docPython = parser.value("doc-python");
   opts.docScreen = parser.value("doc-screen");
   opts.colorScheme = parser.value("color-scheme");
+  opts.shootSelfTest = parser.isSet("shoot-selftest");
   return opts;
 }

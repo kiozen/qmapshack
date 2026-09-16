@@ -19,6 +19,7 @@
 #include <QNetworkProxyFactory>
 #include <QtPlugin>
 #include <QtWidgets>
+#include <memory>
 #include <optional>
 
 #include "CMainWindow.h"
@@ -48,7 +49,8 @@ int main(int argc, char** argv) {
   CShotEntry::pinEnvironment(argc, argv);
   IAppSetup::getPlatformInstance()->attachParentConsole(argc, argv);
 
-  QApplication app(argc, argv);
+  // A documentation run needs its own QApplication subclass.
+  const std::unique_ptr<QApplication> app = CShotEntry::createApplication(argc, argv);
   CQmsStyle::install();
   CUiTheme::installThemeRefresh();
 
@@ -134,5 +136,5 @@ int main(int argc, char** argv) {
     });
   }
 
-  return app.exec();
+  return app->exec();
 }
