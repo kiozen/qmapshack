@@ -16,20 +16,18 @@
 
 **********************************************************************************************/
 
-#include <QApplication>
+#ifndef CSHOTDOCSELFTEST_H
+#define CSHOTDOCSELFTEST_H
 
-#include "shoot/CShotEntry.h"
+#include <QtGlobal>
 
-/// A build without the documentation subsystem.
-bool CShotEntry::isDocRun(const CAppOpts&) { return false; }
-bool CShotEntry::showsMainWindow(const CAppOpts&) { return true; }
+/**
+   @brief The writer's session without a writer: page operations on a scratch checkout, and the state process and
+          `shots.py` job handles against real processes, including the orders in which they fail.
+ */
+namespace CShotDocSelfTest {
+/** @return the number of failed cases */
+qint32 run();
+}  // namespace CShotDocSelfTest
 
-void CShotEntry::pinEnvironment(int, char**) {}
-
-std::unique_ptr<QApplication> CShotEntry::createApplication(int& argc, char** argv) {
-  return std::make_unique<QApplication>(argc, argv);
-}
-
-bool CShotEntry::prepare(const CAppOpts&) { return true; }
-
-std::optional<qint32> CShotEntry::run(const CAppOpts&, CMainWindow&) { return std::nullopt; }
+#endif  // CSHOTDOCSELFTEST_H
