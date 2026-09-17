@@ -31,6 +31,8 @@
 #include <QDebug>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QGroupBox>
 #include <QHash>
 #include <QHeaderView>
@@ -49,6 +51,7 @@
 #include <QStyleOptionViewItem>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QTimer>
 #include <QToolButton>
 #include <QTreeView>
 #include <QTreeWidget>
@@ -83,6 +86,10 @@
 #include "widgets/CIconGrid.h"
 
 namespace {
+/** How long a canvas step waits for the map to finish drawing, and how often it looks [ms]. */
+constexpr qint32 kCanvasSettleMs = 20000;
+constexpr qint32 kCanvasPollMs = 20;
+
 qint32 fail(const QString& what) {
   qWarning().noquote() << "shoot:" << what;
   return 1;
@@ -1433,6 +1440,9 @@ class CSurfaceHandler : public IShotHandler {
     if (const qint32 failed = failUnlessUsable(surface, step); 0 != failed) {
       return failed;
     }
+    if (!settle(surface)) {
+      return fail(classOf(surface) + " did not finish drawing before the step: " + compact(step));
+    }
     const QString& verb = step["do"].toString();
     const Qt::KeyboardModifiers mods = modsOf(step);
     if (("move" == verb || "release" == verb) && step.contains("dx")) {
@@ -1514,6 +1524,12 @@ class CSurfaceHandler : public IShotHandler {
 
   /** @return the pixel of @p step's position now; nothing when not shown */
   virtual std::optional<QPoint> pixelOf(QWidget* surface, const QJsonObject& step) const = 0;
+
+  /** @brief Wait until @p surface shows what the previous step did; false when it never does */
+  virtual bool settle(QWidget* surface) const {
+    Q_UNUSED(surface)
+    return true;
+  }
 
  private:
   /** @return each surface's replayed `press` until its `release` */
@@ -1659,6 +1675,22 @@ class CCanvasHandler : public CSurfaceHandler {
     QList<IGisItem*> items;
     CGisWorkspace::self().getItemsByPos(QPointF(pixel), items);
     return (1 == items.size()) ? CShotAddress::itemPathOf(items.first()) : QString();
+  }
+
+  /** An item's pixels are updated by the draw, so a hit or click after a zoom or pan needs it finished. */
+  bool settle(QWidget* surface) const override {
+    const CCanvas* canvas = static_cast<CCanvas*>(surface);
+    QElapsedTimer timer;
+    timer.start();
+    while (!canvas->isDrawComplete()) {
+      if (timer.hasExpired(kCanvasSettleMs)) {
+        return false;
+      }
+      QEventLoop loop;
+      QTimer::singleShot(kCanvasPollMs, &loop, &QEventLoop::quit);
+      loop.exec(QEventLoop::ExcludeUserInputEvents);
+    }
+    return true;
   }
 
   std::optional<QPoint> pixelOf(QWidget* surface, const QJsonObject& step) const override {
