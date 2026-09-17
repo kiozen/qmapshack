@@ -31,10 +31,10 @@
 #include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
-#include <QEventLoop>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHeaderView>
+#include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -95,7 +95,9 @@
 #include "shoot/CShotHandlers.h"
 #include "shoot/CShotPage.h"
 #include "shoot/CShotRecorder.h"
+#include "shoot/CShotReplay.h"
 #include "shoot/CShotSynth.h"
+#include "shoot/CShotWriter.h"
 #include "widgets/CIconGrid.h"
 
 namespace {
@@ -646,45 +648,7 @@ qint32 CShotSelfTest::run(CShotContext& ctx) {
     if (c.closesMenus || c.replayClosesMenus) {
       menuCloser.start();
     }
-    // Like the scenario queue: the next step is scheduled before a step runs, as a step that exec()s a menu returns
-    // only once a later step picked from it. A step running outside such a loop is let finish first.
-    qint32 replayFailures = 0;
-    qsizetype next = 0;
-    qint32 running = 0;
-    QEventLoop loop;
-    std::function<void()> pump = [&]() {
-      if (running > 0 && nullptr == QApplication::activePopupWidget() && nullptr == QApplication::activeModalWidget()) {
-        QTimer::singleShot(10, &loop, pump);
-        return;
-      }
-      if (next >= steps.size()) {
-        if (0 == running) {
-          loop.quit();
-        } else {
-          QTimer::singleShot(10, &loop, pump);
-        }
-        return;
-      }
-      const QJsonObject step = steps.at(next++);
-      QTimer::singleShot(60, &loop, pump);
-      running++;
-      replayFailures += CShotHandlers::replay(main, step);
-      running--;
-    };
-    QTimer deadline;
-    deadline.setSingleShot(true);
-    QObject::connect(&deadline, &QTimer::timeout, &loop, [&]() {
-      qWarning() << "shoot: the replay did not finish - a step opened something no later step closed";
-      replayFailures++;
-      next = steps.size();
-      while (QWidget* popup = QApplication::activePopupWidget()) {
-        popup->close();
-      }
-      loop.quit();
-    });
-    deadline.start(20000);
-    QTimer::singleShot(0, &loop, pump);
-    loop.exec();
+    const qint32 replayFailures = CShotReplay::perform(main, steps);
     settle(120);
     menuCloser.stop();
     const QString replayed = c.state();
@@ -1756,7 +1720,9 @@ qint32 CShotSelfTest::run(CShotContext& ctx) {
          plotState});
 
   check({"after a right click opened the plot's menu, the plot is still recorded",
-         {R"({"do":"move","widget":"probePlot"})", R"({"button":"right","do":"click","widget":"probePlot"})",
+         {R"({"do":"move","widget":"probePlot"})", R"({"button":"right","do":"press","widget":"probePlot"})",
+          R"({"do":"keypress","key":"Esc","widget":"probePlot/QMenu#0"})",
+          R"({"button":"right","do":"release","dx":0,"dy":0,"widget":"probePlot"})",
           R"({"button":"left","do":"click","widget":"probePlot"})"},
          resetPlot,
          [&]() {
@@ -1768,7 +1734,7 @@ qint32 CShotSelfTest::run(CShotContext& ctx) {
              CShotSynth::mouse(QTest::MouseRelease, p.plot, Qt::RightButton, Qt::NoModifier, at);
              QTimer::singleShot(150, p.plot, []() {
                if (QMenu* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget()); nullptr != menu) {
-                 menu->close();
+                 QTest::keyClick(menu->windowHandle(), Qt::Key_Escape);
                }
              });
            });
@@ -1779,7 +1745,7 @@ qint32 CShotSelfTest::run(CShotContext& ctx) {
          [&menus, plotState]() { return plotState() + " menus=" + QString::number(menus.shown); },
          true,
          false,
-         true});
+         false});
 
   check({"a wheel on the plot with Alt held zooms one axis, and replays so",
          {R"({"do":"move","widget":"probePlot"})",
@@ -2154,6 +2120,126 @@ qint32 CShotSelfTest::run(CShotContext& ctx) {
                   .arg(memories)
                   .arg(actionNames.size())
                   .arg(QStringList(actionNames.begin(), actionNames.end()).join(' ')));
+    }
+  }
+
+  // ---- a scenario replayed twice in one process
+
+  {
+    const QString name = "a scenario that opens a details tab replays the same the second time";
+    resetMap();
+    project->setExpanded(true);
+    wks->scrollToItem(trk);
+    settle(200);
+
+    recorder.start();
+    QTimer::singleShot(300, wks, []() {
+      QMenu* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+      const QList<QAction*>& entries = (nullptr == menu) ? QList<QAction*>() : menu->actions();
+      for (QAction* entry : entries) {
+        if ("actionEditDetails" == entry->objectName()) {
+          const QPoint& at = menu->actionGeometry(entry).center();
+          CShotSynth::arrive(menu, at);
+          CShotSynth::mouse(QTest::MouseClick, menu, Qt::LeftButton, Qt::NoModifier, at);
+          return;
+        }
+      }
+      if (nullptr != menu) {
+        menu->close();
+      }
+    });
+    click(wks->viewport(), wks->visualItemRect(trk).center(), Qt::RightButton);
+    settle(500);
+    const QJsonArray& details = recorder.stop();
+    qDebug().noquote() << "shoot: case" << name << "recorded" << QJsonDocument(details).toJson(QJsonDocument::Compact);
+
+    QTabWidget* tabs = nullptr;
+    for (QWidget* w = canvas->parentWidget(); nullptr != w && nullptr == tabs; w = w->parentWidget()) {
+      tabs = qobject_cast<QTabWidget*>(w);
+    }
+    // The recording opened the tab; the replays must find the window without it.
+    const auto closeDetails = [tabs]() {
+      while (nullptr != tabs && tabs->count() > 1) {
+        emit tabs->tabCloseRequested(tabs->count() - 1);
+        settle(100);
+      }
+    };
+    closeDetails();
+    const qint32 before = (nullptr == tabs) ? -1 : tabs->count();
+    const auto pictureInto = [main, tabs](QImage& image, qint32& tabCount) {
+      return [main, tabs, &image, &tabCount]() -> qint32 {
+        tabCount = (nullptr == tabs) ? -1 : tabs->count();
+        image = CShotWriter::render(main, main->size());
+        return image.isNull() ? 1 : 0;
+      };
+    };
+    QImage first;
+    QImage second;
+    qint32 firstTabs = 0;
+    qint32 secondTabs = 0;
+    qint32 replayFailures = CShotReplay::replay(details, ctx, pictureInto(first, firstTabs));
+    CShotReplay::clear(details, ctx);
+    replayFailures += CShotReplay::replay(details, ctx, pictureInto(second, secondTabs));
+    CShotReplay::clear(details, ctx);
+    closeDetails();
+
+    verdict(
+        name,
+        0 == replayFailures && !first.isNull() && first == second && before + 1 == firstTabs && firstTabs == secondTabs,
+        QString("%1 replay failure(s), %2 tabs before, %3 then %4, pictures %5")
+            .arg(replayFailures)
+            .arg(before)
+            .arg(firstTabs)
+            .arg(secondTabs)
+            .arg(first == second ? "equal" : "differ"));
+  }
+
+  {
+    const QString name = "a range started in a plot is undone before the scenario replays again";
+    resetMap();
+    trk->edit();
+    settle(500);
+    CPlotProfile* plot = nullptr;
+    const QList<CPlotProfile*>& plots = main->findChildren<CPlotProfile*>();
+    for (CPlotProfile* candidate : plots) {
+      if (candidate->isVisible() && NOFLOAT != candidate->xValueAt(center(candidate))) {
+        plot = candidate;
+        break;
+      }
+    }
+    if (nullptr == plot) {
+      verdict(name, false, "the details tab shows no profile");
+    } else {
+      recorder.start();
+      CShotSynth::move(plot, center(plot));
+      click(plot, center(plot));
+      settle(200);
+      const QJsonArray& steps = recorder.stop();
+      qDebug().noquote() << "shoot: case" << name << "recorded" << QJsonDocument(steps).toJson(QJsonDocument::Compact);
+      const auto rangeState = [plot, trk]() {
+        return QString("%1/%2").arg(plot->isSelectingRange()).arg(int(trk->getRangState()));
+      };
+      const QString recorded = rangeState();
+      qint32 replayFailures = CShotReplay::replay(steps, ctx, {});
+      const QString firstState = rangeState();
+      replayFailures += CShotReplay::replay(steps, ctx, {});
+      const QString secondState = rangeState();
+      CShotReplay::clear(steps, ctx);
+      const QString cleared = rangeState();
+      verdict(name,
+              0 == replayFailures && recorded.startsWith("1/") && recorded == firstState && firstState == secondState &&
+                  !plot->isSelectingRange(),
+              QString("%1 replay failure(s), recorded %2, replays %3 then %4, cleared %5")
+                  .arg(replayFailures)
+                  .arg(recorded, firstState, secondState, cleared));
+    }
+    QTabWidget* tabs = nullptr;
+    for (QWidget* w = canvas->parentWidget(); nullptr != w && nullptr == tabs; w = w->parentWidget()) {
+      tabs = qobject_cast<QTabWidget*>(w);
+    }
+    while (nullptr != tabs && tabs->count() > 1) {
+      emit tabs->tabCloseRequested(tabs->count() - 1);
+      settle(100);
     }
   }
 
