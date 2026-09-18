@@ -78,6 +78,15 @@ class CShotContext {
 
   void setFixture(IGisProject* project, CGisItemTrk* trk, CGisItemWpt* wpt, CGisItemRte* rte, CGisItemOvlArea* area);
 
+  /**
+     @brief The scenario the application is in already; a shot taken in it performs none of its steps.
+
+     Empty for none: a build performs every scenario. A step is not idempotent, so a scenario performed on top of itself
+     is another state.
+   */
+  void setLiveScenario(const QString& name) { live = name; }
+  const QString& liveScenario() const { return live; }
+
  private:
   /** @return false when the picture is refused and nothing was written */
   bool emitPicture(QWidget* w, const QSize& size, const QString& stem) const;
@@ -95,6 +104,7 @@ class CShotContext {
   QRect rect;
   qint32 frameNo = 0;
   fixture_t fixture;
+  QString live;
 };
 
 #endif  // CSHOTCONTEXT_H

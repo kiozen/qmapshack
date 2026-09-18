@@ -116,14 +116,16 @@ def ini_string(value):
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def compose_config(page, scenario, out):
-    """One scenario's whole configuration: its own file, or the fixture's base when it has none.
+def compose_config(page, scenario, out, source=None):
+    """One scenario's whole configuration: `source`, else its own file, else the fixture's base.
 
-    Never merged, so changing the base cannot move a picture already taken. Paths use forward
+    Never merged, so changing the base cannot move a picture already taken. `source` is what a trial
+    replays a parked recording against: the settings the recording started from. Paths use forward
     slashes: QSettings reads a backslash as an escape.
     """
     own = SHOTS_DIR / page / f"{scenario}.ini" if scenario else None
-    source = own if own is not None and own.is_file() else FIXTURE_INI
+    if source is None:
+        source = own if own is not None and own.is_file() else FIXTURE_INI
     data = read_ini(source)
 
     # With it on, a run saves its workspace and CShotFixture refuses the next one.
@@ -333,6 +335,9 @@ def cmd_replay(args):
     for page_file in sorted(SHOTS_DIR.glob("*.json")):
         shots = json.loads(page_file.read_text(encoding="utf-8")).get("shots", [])
         shots = [shot for shot in shots if not args.only or fnmatch.fnmatchcase(shot.get("id", ""), args.only)]
+        outside = [shot.get("id", "") for shot in shots if not stays_inside(shot.get("id", ""))]
+        if outside:
+            sys.exit(f"{page_file.name}: these ids name a place outside doc/images: {', '.join(outside)}")
         if not shots:
             continue
         print(f"{page_file.stem}.md")
@@ -491,6 +496,10 @@ def cmd_unused(args):
         page_file.write_text(json.dumps(shot_file, indent=4, sort_keys=True, ensure_ascii=False) + "\n",
                              encoding="utf-8")
     for _, shot_id in dead:
+        # A hand-edited id could name a file anywhere.
+        if not stays_inside(shot_id):
+            print(f"  {shot_id} names a place outside doc/images; its pictures are left alone")
+            continue
         for picture in (IMAGES_DIR / f"{shot_id}.png", WORK_DIR / f"{shot_id}.png", out / f"{shot_id}.png"):
             picture.unlink(missing_ok=True)
     for picture in orphans:
@@ -536,6 +545,13 @@ def cmd_take(args):
         sys.exit(f"the session ended with {result.returncode}")
 
 
+def stays_inside(name):
+    """CShotFiles::staysInside(): true when @p name, joined below a directory, stays below it."""
+    if not name or name.startswith("/") or "\\" in name or ":" in name:
+        return False
+    return all(part not in ("", ".", "..") for part in name.split("/"))
+
+
 def move_picture(picture, target):
     """Move @p picture over @p target; a move, so a reader of target never finds half a picture."""
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -554,6 +570,8 @@ def cmd_publish(args):
         # A move, not copy and delete: a picture taken again meanwhile is a new file in _work, never lost.
         move_picture(picture, IMAGES_DIR / f"{shot_id}.png")
         published.append(shot_id)
+        # The entry kept for a revert: the published picture now belongs to the current one.
+        (WORK_DIR / f"{shot_id}.shot.json").unlink(missing_ok=True)
     # Only emptied directories go: a picture taken meanwhile stays for the next publish.
     for directory in sorted((path for path in WORK_DIR.rglob("*") if path.is_dir()), reverse=True) + [WORK_DIR]:
         try:
@@ -572,7 +590,10 @@ def cmd_compose(args):
     out = Path(args.out).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     scenario = None if args.scenario in (None, "", BASE_SCENARIO) else args.scenario
-    compose_config(page_name(args.page), scenario, out)
+    source = Path(args.source).resolve() if args.source else None
+    if source is not None and not source.is_file():
+        raise SystemExit(f"{source} does not exist")
+    compose_config(page_name(args.page), scenario, out, source)
     print(out)
 
 
@@ -609,6 +630,8 @@ def main():
     compose = commands.add_parser("compose")
     compose.add_argument("page")
     compose.add_argument("--scenario")
+    compose.add_argument("--from", dest="source", metavar="FILE",
+                         help="compose from this file instead of the page's and scenario's own")
     compose.add_argument("--out", required=True, metavar="FILE")
     compose.set_defaults(func=cmd_compose)
 

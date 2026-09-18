@@ -1036,6 +1036,7 @@ file.
 - `doc-image-publish-plan.md` — `shots.py publish` and the panel's Publish exist (#1254); left: its
   "Left to do".
 - `QMS-1251-recorder-signals-plan.md` — the recorder. `shots.py selftest` verifies it.
+- `QMS-1257-state-process-plan.md` — #1257 built but uncommitted; left: the live checks and one proposal.
 
 ### Documentation subsystem (QMS-1217)
 
@@ -1043,10 +1044,9 @@ file.
 not re-derive), §10 what the demo does not do, §11 the sub-tickets.
 
 **One branch, one commit per sub-ticket.** #1245-#1257 are commits on `QMS-1217` (based on `dev`),
-never branches of their own. #1245-#1254 exist: hermetic run, render path, shot file, exposure
-catalog, fixture, `shots.py`, recorder, row buttons, replay queue, launcher/panel/channel. The state
-process is minimal (fixture, replay, `ready`); F9, recording and the rest of its verbs are still only
-the throwaway demo on `QMS-1217_demo`, so statements about them below are requirements.
+never branches of their own. #1245-#1254 and #1257 exist: hermetic run, render path, shot file, exposure
+catalog, fixture, `shots.py`, recorder, row buttons, replay queue, launcher/panel/channel, state process
+and F9. #1255 (writer-facing labels) and #1256 (menu split) are still to do.
 
 ```
 doc/pages/<page>.md            the only source of shot names
@@ -1320,6 +1320,12 @@ or run it belongs to is the bug this subsystem invites; keep what runs in these 
 - **`CShotFiles`** is one page on disk and owns every rule: name validation, what a rebind loses,
   rename order with rollback, pictures deleted only after the shot file is committed (`QSaveFile`),
   "unused" over every page. The launcher only asks the question and calls it.
+- **A shot id or scenario name that leaves its directory has no path** (`CShotFiles::staysInside()`:
+  no `..`, `.`, empty part, leading `/`, `\` or `:`): every path builder returns empty, and
+  `CShotWriter::write()` refuses it. `shots.py`'s `stays_inside()` is the same rule; change both.
+- **A shot file with `shots` not a list or `scenarios` not an object is refused** like one that is no
+  JSON: read as empty, the next write would drop it. The panel shows `shotFileProblem()` first.
+- **A revert entry that does not parse reverts nothing**: read as `{}` it would remove the shot.
 - **Tests:** `shots.py selftest` also runs `CShotDocSelfTest` (page rules on a temp checkout; job and
   state handles against real processes, including failed starts and stop with reports queued).
   `python3 -m unittest doc/tools/test_shots.py` covers `publish`, `unused --delete` and page names.
@@ -1345,7 +1351,8 @@ or run it belongs to is the bug this subsystem invites; keep what runs in these 
 
 - **Two processes.** `shots.py take <page>` starts the launcher: `--doc <repo> --doc-page <page>
   --doc-python`, on screen (`pinned_env(offscreen=False)`). It owns the panel and every file operation
-  (`CShotFiles`) except writing the base configuration and a recording; it never renders. Each state
+  (`CShotFiles`) but the ones the state process does itself - the base configuration, a recording, and
+  the shot and picture F9 or a region takes; it never renders. Each state
   process is started with `--doc-scenario <name|->` and killed on another pick; nothing is reset in
   place.
 - **The launcher's main window is never shown**: `main.cpp` asks `CShotEntry::showsMainWindow()`, and
@@ -1354,9 +1361,10 @@ or run it belongs to is the bug this subsystem invites; keep what runs in these 
 - **Launcher and state need separate workspace databases** (`<page>-launcher-workspace.db`): one
   shared SQLite file logged `database is locked` twice and delayed the fixture from 1.6 s to 12 s.
 - **Channel** `QLocalServer` `qms-doc-<pid>`, one line per message, every report handled queued.
-  Launcher → state: `region`, `update`, `record`, `stop`, `name`, `discard`, `select`, `retake`, `sync`.
+  Launcher → state: `region`, `update`, `record`, `stop`, `name`, `discard`, `select`, `sync`.
   State → launcher: `status`, `ready`, `tagged`, `recording`, `recorded`, `recorded-pending`,
-  `recorded-none`. The minimal state answers anything but `select`/`sync` with a `status` line.
+  `recorded-none`, `trial-failed`. Before its `ready` a state answers every verb but `select`/`sync` with a
+  `status` line.
 - **Lifetime, measured on Linux:** state `kill -9` → panel stays and says so; state window closed →
   session ends; launcher `kill -9` → state quits on `disconnected` within 1 s; launcher SIGTERM →
   both end. SIGTERM only closes the main window (`CAppSetupLinux::closeOnSIGTERM`), so both the
@@ -1366,11 +1374,16 @@ or run it belongs to is the bug this subsystem invites; keep what runs in these 
 - **`mayClose()` asks, never refuses silently**, and refuses only while a publish runs. Yes publishes
   and ends the session once it succeeded; a failed publish keeps the panel, the next close asks
   again. An ending session skips the question - work pictures stay in `_work` for the next one.
-- **The panel's size** lives in `doc/shots/_cache/doc-panel.ini`, applied one event loop after show.
+- **The panel's size and position and the application window's position** live in
+  `doc/shots/_cache/doc-panel.ini` (`CShotFiles::placementFile()`), applied one event loop after show;
+  a position whose screen is gone is ignored. The state saves the window's on every move once ready.
   No `WindowStaysOnTopHint`; `reject()` swallows Escape.
 - **Every `shots.py` run uses `--doc-python`** (`shots.py take` passes `sys.executable`), never
-  `python3` from `PATH` (a Store alias on Windows): `compose` before each state, `replay` for Take all
-  again, `publish`.
+  `python3` from `PATH` (a Store alias on Windows): `compose` before each state, `replay` for Take again
+  and Take all again, `publish`.
+- **Revert puts the shot's entry back too**: `storeShot()` keeps the entry from before the first take
+  since publish as `_work/<id>.shot.json` (`{}` for a new shot); `revertShot()` restores it,
+  `shots.py publish` deletes it with the picture it moves.
 - **Deleting a scenario or rebinding a shot reduces the shot to its `id` and deletes both pictures**;
   rebind asks first whenever any key but `id`/`scenario` or a picture - also one without a shot -
   would go.
@@ -1379,24 +1392,52 @@ or run it belongs to is the bug this subsystem invites; keep what runs in these 
 - **Rename moves `<page>/<scenario>.ini` too**; left behind, the scenario reopens on the base. Renaming
   the running scenario restarts the state under the new name.
 - **Scenario names are file names and arguments**: no `/ \ : * ? " < > |`, no leading `-`, no
-  spaces or dots at the ends, not `-` or `(base)`.
+  spaces or dots at the ends, not `-` or `(base)`, no Windows device name (`CON`, `nul.txt`), and none
+  that differs from another scenario only in case (`caseTwinOf()`: one file on Windows and macOS).
 - **Driving the panel with xdotool on a KDE desk**: `windowactivate` does not raise it over the
   writer's windows; check the window under the pointer belongs to the target pid before every click.
 
-#### Still demo-only: the state process (#1255-#1257)
+#### The state process (`CShotDocMode`)
 
 - **The state re-applies `MainWindow/geometry` after the fixture is up**, and
-  `portableGeometry()` zeroes the screen width in stored geometry so `restoreGeometry()` does not
-  drop it on another screen size (>25 % difference). `moveToWritersScreen()` centres the window on
-  the panel's screen (`--doc-screen`).
+  `portableGeometry()` zeroes the screen and its width in stored geometry so `restoreGeometry()` does
+  not drop it on another screen size (>25 % difference). `placeWindow()` moves it to
+  where the writer left the last state's window. Measured: a base stored at 1200x876 on a 1700 px screen came
+  up 1200x872 on a 1280x900 one. `CShotDocSelfTest` fails when a Qt writes another geometry version.
 - **(base) is a row, not a scenario**: shots in it have no `scenario` key (`--shoot-scenario -`);
   `CShotDocMode` captures and replays its arrangement and view; nothing is stored.
 - **A scenario is never performed on top of itself** (`CShotContext::liveScenario()`): a shot of the
   live scenario photographs what is there; a build sets none and performs every scenario.
+- **`CShotReplay::perform()` closes popups and modal dialogs only when it ran steps.** Without steps
+  a window up is the writer's own; closing it anyway shut the About box F9 was pressed on.
 - **Render before asking anything.** Focus cannot be restored across another window, and a project
   row's focus buttons fade in only with `State_HasFocus`, so `tag()` renders every candidate
-  (`livePartsAt()`) at the key press. `CShotRegionPicker` takes `Qt::NoFocus`. `select` steps call
-  `setFocus()` with `setCurrentItem()`.
+  (`livePartsAt()`) at the key press, through `CShotWriter::renderAll()`: one `settleStable()` per window, and again only for a
+  part whose map drew again since.
+  `CShotRegionPicker` takes `Qt::NoFocus`.
+- **F9 refuses a picture whose shot names another scenario** than the running one; its row starts
+  that scenario.
+- **A recording is stored only once it replays.** `record` snapshots the settings into
+  `_cache/<page>-trial.ini` before the recorder runs, `name` parks the steps beside it in
+  `<page>-trial.json`; the launcher starts a state composed `--from` that snapshot with
+  `--doc-trial <name>`, which replays them, stores them with `CShotFiles::storeScenario()` and holds
+  the scenario - or reports `trial-failed` with the first `shoot:` warning, stores nothing and the
+  launcher returns to the base.
+- **A scenario keeps the configuration it was recorded against**, so the base can move without moving
+  a picture already taken. Save config therefore writes only `(base)`, through
+  `CMainWindow::saveConfig()`, which is what `~CMainWindow` writes; a scenario is changed by recording
+  it again. `compose --from <ini>` names the source file instead of resolving it from page and
+  scenario.
+- **Take again is headless**: the launcher runs `shots.py -o doc/images/_work replay --only <id>`,
+  what a build does. a failure keeps the work picture.
+- **A picture is written from what F9 rendered only for a live part.** An exposed dialog parented to
+  the main window is in that render too, and its shot says `exposure`, which the build renders from.
+- **Settings drift is what changed since the state was set up**, not a compare with the scenario's
+  `.ini`: `snapshotSetup()` keeps the settings after `slotSetUp()`, after a trial and after base Save
+  config. Compared as INI text - `QSettings` reads a one-entry `QStringList` back as a `QString` from
+  another process' file and as `QStringList` from its own process' write (measured on
+  `dem2/keysKnownDems`), so a `QVariant` compare reported drift on an untouched scenario.
+- **`obey()` refuses launcher commands with a `status` while F9 or a region is in progress** (`busy`).
 
 ### CMake — remaining
 

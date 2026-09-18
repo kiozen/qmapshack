@@ -113,6 +113,15 @@ class Unused(ScratchTree):
         for base in (shots.IMAGES_DIR, shots.WORK_DIR, check):
             self.assertFalse((base / "p" / "gone.png").exists(), base)
 
+    def test_an_id_outside_doc_images_deletes_nothing(self):
+        self.put(shots.PAGES_DIR / "p.md", b"")
+        shot_file = shots.SHOTS_DIR / "p.json"
+        self.put(shot_file, json.dumps({"shots": [{"id": "../../victim"}]}).encode())
+        victim = shots.IMAGES_DIR / ".." / ".." / "victim.png"
+        self.put(victim)
+        self.quietly(shots.cmd_unused, out=str(self.root / "check"), delete=True)
+        self.assertTrue(victim.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
