@@ -42,8 +42,8 @@ constexpr qint32 kDeadlineExitCode = 1;
 /**
    @brief Perform @p steps below @p root through their handlers.
 
-   @param whenReady  runs after the last step, while whatever a step opened is still up; returns its failures. Popups
-                     and modal dialogs are closed after it.
+   @param whenReady  runs after the last step, while whatever a step opened is still up; returns its failures. With
+   steps, popups and modal dialogs are closed after it.
    @return the failures
  */
 qint32 perform(QWidget* root, const QList<QJsonObject>& steps, const std::function<qint32()>& whenReady = {});

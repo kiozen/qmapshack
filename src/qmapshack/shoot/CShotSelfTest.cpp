@@ -31,6 +31,7 @@
 #include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
+#include <QElapsedTimer>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -2192,6 +2193,35 @@ qint32 CShotSelfTest::run(CShotContext& ctx) {
             .arg(firstTabs)
             .arg(secondTabs)
             .arg(first == second ? "equal" : "differ"));
+  }
+
+  {
+    const QString name = "the parts around the map render as render() does them, waiting for the map once";
+    resetMap();
+    QList<QWidget*> parts;
+    for (QWidget* w = canvas; nullptr != w && w != main; w = w->parentWidget()) {
+      parts << w;
+    }
+    parts << main;
+    QElapsedTimer timer;
+    timer.start();
+    QList<QImage> each;
+    for (QWidget* part : std::as_const(parts)) {
+      each << CShotWriter::render(part, part->isWindow() ? part->size() : QSize());
+    }
+    const qint64 eachMs = timer.restart();
+    const QHash<const QWidget*, QImage>& all = CShotWriter::renderAll(parts);
+    const qint64 allMs = timer.elapsed();
+    qint32 equal = 0;
+    for (qsizetype i = 0; i < parts.size(); i++) {
+      equal += (!each.at(i).isNull() && each.at(i) == all.value(parts.at(i))) ? 1 : 0;
+    }
+    verdict(name, equal == parts.size() && allMs < eachMs,
+            QString("%1 of %2 parts equal, %3 ms one by one, %4 ms together")
+                .arg(equal)
+                .arg(parts.size())
+                .arg(eachMs)
+                .arg(allMs));
   }
 
   {
