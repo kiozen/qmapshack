@@ -115,14 +115,16 @@ def ini_string(value):
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def compose_config(page, scenario, out):
-    """One scenario's whole configuration: its own file, or the fixture's base when it has none.
+def compose_config(page, scenario, out, source=None):
+    """One scenario's whole configuration: `source`, else its own file, else the fixture's base.
 
-    Never merged, so changing the base cannot move a picture already taken. Paths use forward
+    Never merged, so changing the base cannot move a picture already taken. `source` is what a trial
+    replays a parked recording against: the settings the recording started from. Paths use forward
     slashes: QSettings reads a backslash as an escape.
     """
     own = SHOTS_DIR / page / f"{scenario}.ini" if scenario else None
-    source = own if own is not None and own.is_file() else FIXTURE_INI
+    if source is None:
+        source = own if own is not None and own.is_file() else FIXTURE_INI
     data = read_ini(source)
 
     # With it on, a run saves its workspace and CShotFixture refuses the next one.
@@ -559,7 +561,10 @@ def cmd_compose(args):
     out = Path(args.out).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     scenario = None if args.scenario in (None, "", BASE_SCENARIO) else args.scenario
-    compose_config(page_name(args.page), scenario, out)
+    source = Path(args.source).resolve() if args.source else None
+    if source is not None and not source.is_file():
+        raise SystemExit(f"{source} does not exist")
+    compose_config(page_name(args.page), scenario, out, source)
     print(out)
 
 
@@ -594,6 +599,8 @@ def main():
     compose = commands.add_parser("compose")
     compose.add_argument("page")
     compose.add_argument("--scenario")
+    compose.add_argument("--from", dest="source", metavar="FILE",
+                         help="compose from this file instead of the page's and scenario's own")
     compose.add_argument("--out", required=True, metavar="FILE")
     compose.set_defaults(func=cmd_compose)
 

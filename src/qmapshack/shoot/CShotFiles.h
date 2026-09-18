@@ -70,6 +70,11 @@ class CShotFiles {
   QString publishedImage(const QString& id) const;
   QString workImage(const QString& id) const;
 
+  /** @return where a recording waits until it replays: `doc/shots/_cache/<page>-trial.json` */
+  QString trialFile() const;
+  /** @return the parked recording's settings: `doc/shots/_cache/<page>-trial.ini` */
+  QString trialConfig() const;
+
   /** @return true when `doc/images/_work/` holds a picture of any page */
   bool hasUnpublishedImages() const;
 
@@ -106,6 +111,25 @@ class CShotFiles {
 
   /** @brief Delete @p id's work picture. */
   QString revertShot(const QString& id);
+
+  /** @brief Write @p steps to trialFile(); trialConfig() is the caller's to write. */
+  QString parkRecording(const QJsonArray& steps) const;
+
+  /** @brief Read the steps parkRecording() wrote. */
+  QString parkedRecording(QJsonArray& steps) const;
+
+  /** @brief Delete trialFile() and trialConfig(). */
+  void dropParked() const;
+
+  /**
+     @brief Store @p steps as the scenario @p name, replacing one of that name, and @p config as its configuration.
+
+     @param config  an INI file copied to scenarioConfig(), empty to leave the configuration alone
+   */
+  QString storeScenario(const QString& name, const QJsonArray& steps, const QString& config);
+
+  /** @brief Store own @p shot, replacing the one with its id. */
+  QString storeShot(const QJsonObject& shot);
 
  private:
   QString readShotFile(QJsonObject& content) const;

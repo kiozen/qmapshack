@@ -77,6 +77,10 @@ QString CShotFiles::workImage(const QString& id) const {
   return repo.absoluteFilePath("doc/images/_work/" + id + ".png");
 }
 
+QString CShotFiles::trialFile() const { return repo.absoluteFilePath("doc/shots/_cache/" + page + "-trial.json"); }
+
+QString CShotFiles::trialConfig() const { return repo.absoluteFilePath("doc/shots/_cache/" + page + "-trial.ini"); }
+
 bool CShotFiles::hasUnpublishedImages() const {
   QDirIterator walk(repo.absoluteFilePath("doc/images/_work"), {"*.png"}, QDir::Files, QDirIterator::Subdirectories);
   return walk.hasNext();
@@ -379,4 +383,90 @@ QString CShotFiles::revertShot(const QString& id) {
     return QString("%1 cannot be deleted.").arg(workImage(id));
   }
   return QString();
+}
+
+QString CShotFiles::parkRecording(const QJsonArray& steps) const {
+  if (!QDir().mkpath(QFileInfo(trialFile()).absolutePath())) {
+    return QString("%1 cannot be created.").arg(QFileInfo(trialFile()).absolutePath());
+  }
+  QSaveFile out(trialFile());
+  if (!out.open(QIODevice::WriteOnly) || out.write(QJsonDocument(steps).toJson(QJsonDocument::Indented)) < 0 ||
+      !out.commit()) {
+    return QString("%1 cannot be written: %2").arg(trialFile(), out.errorString());
+  }
+  return QString();
+}
+
+QString CShotFiles::parkedRecording(QJsonArray& steps) const {
+  QFile in(trialFile());
+  if (!in.open(QIODevice::ReadOnly)) {
+    return QString("There is no parked recording %1.").arg(trialFile());
+  }
+  QJsonParseError error;
+  const QJsonDocument& document = QJsonDocument::fromJson(in.readAll(), &error);
+  if (QJsonParseError::NoError != error.error || !document.isArray()) {
+    return QString("%1 is no recording: %2").arg(trialFile(), error.errorString());
+  }
+  steps = document.array();
+  return QString();
+}
+
+void CShotFiles::dropParked() const {
+  QFile::remove(trialFile());
+  QFile::remove(trialConfig());
+}
+
+QString CShotFiles::storeScenario(const QString& name, const QJsonArray& steps, const QString& config) {
+  if (const QString& problem = nameProblem(name); !problem.isEmpty()) {
+    return problem;
+  }
+  QJsonObject content;
+  if (const QString& error = readShotFile(content); !error.isEmpty()) {
+    return error;
+  }
+  QJsonObject scenarios = content["scenarios"].toObject();
+  scenarios[name] = steps;
+  content["scenarios"] = scenarios;
+
+  // Copied beside the target first, so a failed copy or shot file write leaves the old configuration.
+  const QString& target = scenarioConfig(name);
+  const QString& part = target + ".part";
+  if (!config.isEmpty()) {
+    QFile::remove(part);
+    if (!QDir().mkpath(QFileInfo(target).absolutePath()) || !QFile::copy(config, part)) {
+      QFile::remove(part);
+      return QString("%1 cannot be copied to %2.").arg(config, part);
+    }
+  }
+  if (const QString& error = writeShotFile(content); !error.isEmpty()) {
+    QFile::remove(part);
+    return error;
+  }
+  if (!config.isEmpty()) {
+    QFile::remove(target);
+    if (!QFile::rename(part, target)) {
+      return QString("The scenario %1 is stored, its configuration is left in %2.").arg(name, part);
+    }
+  }
+  return QString();
+}
+
+QString CShotFiles::storeShot(const QJsonObject& shot) {
+  const QString& id = shot["id"].toString();
+  if (!isOwn(id)) {
+    return QString("%1 belongs to another page.").arg(id);
+  }
+  QJsonObject content;
+  if (const QString& error = readShotFile(content); !error.isEmpty()) {
+    return error;
+  }
+  QJsonArray shots = content["shots"].toArray();
+  const qsizetype index = indexOf(shots, id);
+  if (index < 0) {
+    shots.append(shot);
+  } else {
+    shots.replace(index, shot);
+  }
+  content["shots"] = shots;
+  return writeShotFile(content);
 }

@@ -19,6 +19,7 @@
 #include "shoot/CShotDocSelfTest.h"
 
 #include <QCoreApplication>
+#include <QDataStream>
 #include <QDebug>
 #include <QDir>
 #include <QEvent>
@@ -33,10 +34,14 @@
 #include <QLocalSocket>
 #include <QMessageBox>
 #include <QPointer>
+#include <QRect>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QVariant>
+#include <QWidget>
 #include <functional>
 
+#include "shoot/CShotDocMode.h"
 #include "shoot/CShotDocPanel.h"
 #include "shoot/CShotDocState.h"
 #include "shoot/CShotFiles.h"
@@ -235,6 +240,142 @@ void testRebind() {
   }
 }
 
+void testParkedRecording() {
+  checkout_t c;
+  const QJsonArray steps{QJsonObject{{"do", "view"}}, QJsonObject{{"do", "click"}}};
+  const QString& error = c.files.parkRecording(steps);
+  write(c.files.trialConfig(), "[General]\n");
+  QJsonArray back;
+  const QString& readError = c.files.parkedRecording(back);
+  const bool parked = error.isEmpty() && readError.isEmpty() && back == steps &&
+                      c.files.trialFile().startsWith(c.repo.absoluteFilePath("doc/shots/_cache/")) &&
+                      read(c.files.shotFile()) == QJsonDocument(c.content()).toJson(QJsonDocument::Indented);
+  c.files.dropParked();
+  const bool dropped = !QFileInfo::exists(c.files.trialFile()) && !QFileInfo::exists(c.files.trialConfig());
+  QJsonArray none;
+  verdict("a parked recording reads back, leaves the shot file alone, and is dropped with its settings",
+          parked && dropped && !c.files.parkedRecording(none).isEmpty(), error + readError);
+}
+
+void testStoreScenario() {
+  const QJsonArray steps{QJsonObject{{"do", "click"}}};
+  {
+    checkout_t c;
+    const QString& config = c.repo.absoluteFilePath("doc/shots/_cache/new.ini");
+    write(config, "[General]\nnew=1\n");
+    const QString& error = c.files.storeScenario("s", steps, config);
+    const bool ok = error.isEmpty() && c.content()["scenarios"].toObject()["s"].toArray() == steps &&
+                    c.content()["scenarios"].toObject().contains("t") &&
+                    read(c.files.scenarioConfig("s")) == "[General]\nnew=1\n" &&
+                    !QFileInfo::exists(c.files.scenarioConfig("s") + ".part") && QFileInfo::exists(config);
+    verdict("store scenario replaces one of that name and its configuration", ok, error);
+  }
+  {
+    checkout_t c;
+    const QString& error = c.files.storeScenario("s", steps, QString());
+    const bool ok = error.isEmpty() && read(c.files.scenarioConfig("s")) == "[General]\n";
+    verdict("store scenario without a configuration leaves the one there", ok, error);
+  }
+  {
+    checkout_t c;
+    const QByteArray& before = read(c.files.shotFile());
+    const QString& error = c.files.storeScenario("-", steps, QString());
+    verdict("store scenario refuses a name that cannot be one", !error.isEmpty() && read(c.files.shotFile()) == before,
+            error);
+  }
+  {
+    checkout_t c;
+    const QString& config = c.repo.absoluteFilePath("doc/shots/_cache/new.ini");
+    write(config, "[General]\nnew=1\n");
+    const QString& shots = c.repo.absoluteFilePath("doc/shots");
+    QFile::setPermissions(shots, QFileDevice::ReadOwner | QFileDevice::ExeOwner);
+    const bool locked = !QFile(QDir(shots).absoluteFilePath("probe")).open(QIODevice::WriteOnly);
+    const QByteArray& before = read(c.files.shotFile());
+    const QString& error = c.files.storeScenario("s", steps, config);
+    const bool ok = !error.isEmpty() && read(c.files.shotFile()) == before &&
+                    read(c.files.scenarioConfig("s")) == "[General]\n" &&
+                    !QFileInfo::exists(c.files.scenarioConfig("s") + ".part");
+    QFile::setPermissions(shots, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
+    if (locked) {
+      verdict("a scenario whose shot file cannot be written keeps its old configuration", ok, error);
+    } else {
+      qWarning() << "shoot: SKIP a scenario whose shot file cannot be written: the directory could not be locked";
+    }
+  }
+}
+
+void testStoreShot() {
+  checkout_t c;
+  const QJsonObject replaced{{"id", "p/c"}, {"widget", "menuFile"}, {"size", QJsonArray{800, 600}}};
+  const QJsonObject added{{"id", "p/h"}, {"widget", ""}};
+  const QString& first = c.files.storeShot(replaced);
+  const QString& second = c.files.storeShot(added);
+  const QJsonArray& shots = c.content()["shots"].toArray();
+  const bool ok = first.isEmpty() && second.isEmpty() && c.files.shot("p/c") == replaced &&
+                  c.files.shot("p/h") == added && shots.size() == 7 && shots.at(2).toObject() == replaced &&
+                  shots.last().toObject() == added;
+  const QByteArray& before = read(c.files.shotFile());
+  const QString& foreign = c.files.storeShot(QJsonObject{{"id", "q/x"}});
+  verdict("store shot replaces its id in place, appends a new one, refuses another page's",
+          ok && !foreign.isEmpty() && read(c.files.shotFile()) == before, first + second);
+}
+
+void testPortableGeometry() {
+  QWidget window;
+  window.setGeometry(40, 50, 300, 200);
+  const QByteArray& geometry = window.saveGeometry();
+  bool known = false;
+  const QByteArray& portable = CShotDocMode::portableGeometry(geometry, known);
+
+  const auto parse = [](const QByteArray& blob, qint32& screen, qint32& width, QByteArray& rest) {
+    QDataStream in(blob);
+    in.setVersion(QDataStream::Qt_4_0);
+    quint32 magic = 0;
+    quint16 major = 0;
+    quint16 minor = 0;
+    QRect frame;
+    QRect normal;
+    quint8 maximized = 0;
+    quint8 fullScreen = 0;
+    QRect rect;
+    in >> magic >> major >> minor >> frame >> normal >> screen >> maximized >> fullScreen >> width >> rect;
+    QDataStream out(&rest, QIODevice::WriteOnly);
+    out << magic << major << minor << frame << normal << maximized << fullScreen << rect;
+  };
+  qint32 screen = -1;
+  qint32 width = -1;
+  QByteArray rest;
+  parse(portable, screen, width, rest);
+  qint32 screenBefore = -1;
+  qint32 widthBefore = -1;
+  QByteArray restBefore;
+  parse(geometry, screenBefore, widthBefore, restBefore);
+  // Fails when a Qt writes another version: the stored geometry would carry the screen again.
+  verdict("portableGeometry knows this Qt's saveGeometry() and zeroes only the screen and its width",
+          known && 0 == screen && 0 == width && rest == restBefore && portable.size() == geometry.size(),
+          QString("known %1, screen %2 width %3 before %4 %5")
+              .arg(known)
+              .arg(screen)
+              .arg(width)
+              .arg(screenBefore)
+              .arg(widthBefore));
+
+  const QByteArray& foreign = QByteArray::fromHex("01d9d0cb0004");
+  bool foreignKnown = true;
+  verdict("portableGeometry hands back a record it does not know, and says so",
+          CShotDocMode::portableGeometry(foreign, foreignKnown) == foreign && !foreignKnown);
+}
+
+void testNamesAPlace() {
+  const bool ok = CShotDocMode::namesAPlace(QString("/home/writer/qmapshack/doc/shots/_cache")) &&
+                  CShotDocMode::namesAPlace(QStringList{"a", "/home/writer/qmapshack/doc"}) &&
+                  !CShotDocMode::namesAPlace(QStringList{"a", "b"}) &&
+                  !CShotDocMode::namesAPlace(QString("relative/doc")) &&
+                  !CShotDocMode::namesAPlace(QByteArray("/home/writer/qmapshack")) &&
+                  !CShotDocMode::namesAPlace(QString()) && !CShotDocMode::namesAPlace(QVariant(12));
+  verdict("namesAPlace: an absolute string or list entry, never a byte array or a relative path", ok);
+}
+
 void testUnused() {
   checkout_t c;
   const QStringList& unused = c.files.unusedShots();
@@ -344,7 +485,7 @@ void testJob() {
 void testStateProcess() {
   const QString& app = QCoreApplication::applicationFilePath();
   const auto end = [](const QString& program, const QStringList& args) {
-    CShotDocState state(QString(), "retake p/a", nullptr);
+    CShotDocState state(QString(), "region p/a", nullptr);
     qint32 count = 0;
     CShotDocState::end_e how = CShotDocState::eClosed;
     QObject::connect(&state, &CShotDocState::ended, [&](CShotDocState::end_e end, const QString&) {
@@ -383,7 +524,7 @@ void testStateProcess() {
   };
 
   {
-    CShotDocState state("s", "retake p/a", nullptr);
+    CShotDocState state("s", "region p/a", nullptr);
     QLocalSocket client;
     qint32 readies = 0;
     QObject::connect(&state, &CShotDocState::becameReady, [&](const QString&) { readies++; });
@@ -399,7 +540,7 @@ void testStateProcess() {
     settle(200);
     const QByteArray& second = client.readAll();
     verdict("the follow-up is sent once, after the first ready",
-            paired && 2 == readies && "retake p/a\n" == first && second.isEmpty(),
+            paired && 2 == readies && "region p/a\n" == first && second.isEmpty(),
             QString("%1 readies, first '%2', then '%3'")
                 .arg(readies)
                 .arg(QString::fromUtf8(first).trimmed(), QString::fromUtf8(second).trimmed()));
@@ -470,6 +611,11 @@ qint32 CShotDocSelfTest::run() {
   testForeignPicture();
   testBusyBox();
   testRows();
+  testParkedRecording();
+  testStoreScenario();
+  testStoreShot();
+  testPortableGeometry();
+  testNamesAPlace();
   testJob();
   testStateProcess();
   qWarning().noquote() << "shoot: self test (documentation mode)" << (cases - failures) << "of" << cases

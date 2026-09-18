@@ -106,8 +106,8 @@ CShotDocPanel::CShotDocPanel(const QString& page, const QString& sizeFile, QWidg
                          "Delete the selected scenario; every picture taken in it has to be taken again.",
                          &deleteScenario);
   whileIdle << addButton(scenarioButtons, "Save config",
-                         "Store the arrangement, size, map and settings on screen as the running scenario's "
-                         "configuration; in (base) it asks first.",
+                         "Store the arrangement, size, map and settings on screen as (base), which it asks first; "
+                         "a scenario keeps what it was recorded with.",
                          &storeConfig);
   layout->addLayout(scenarioButtons);
 
@@ -159,7 +159,8 @@ CShotDocPanel::CShotDocPanel(const QString& page, const QString& sizeFile, QWidg
     shotActions->addWidget(button);
     return button;
   };
-  againButton = addShotAction(":/icons/Screenshot.svgt", "Take again", "Take this picture again in its own scenario.",
+  againButton = addShotAction(":/icons/Screenshot.svgt", "Take again",
+                              "Replay this picture into doc/images/_work; the application on screen is not touched.",
                               &retakeShot);
   regionButton = addShotAction(":/icons/SelectArea.svgt", "Region",
                                "Drag a rectangle for this picture instead of pointing at one widget.", &takeRegion);
@@ -291,7 +292,7 @@ void CShotDocPanel::setShots(const QList<CShotFiles::row_t>& shots_) {
     const QString& text = label(entry.state);
     QTreeWidgetItem* row = new QTreeWidgetItem(shots);
     row->setText(eColumnId, entry.id);
-    row->setText(eColumnState, entry.changed ? text + ", changed by the retake" : text);
+    row->setText(eColumnState, entry.changed ? text + ", taken again" : text);
     row->setToolTip(eColumnId, entry.note.isEmpty() ? entry.id : entry.note);
     if (entry.changed || CShotFiles::eMissing == entry.state || CShotFiles::eNoImage == entry.state) {
       row->setForeground(eColumnState, CUiTheme::foreground(CUiTheme::Role::eWarn));

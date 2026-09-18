@@ -133,8 +133,10 @@ qint32 CShotReplay::perform(QWidget* root, const QList<QJsonObject>& steps, cons
     if (q->whenReady) {
       q->failures += q->whenReady();
     }
-    // The loop below what a step opened cannot return while it is up.
-    closeBlockingWindows();
+    // The loop below what a step opened cannot return while it is up. Without steps a window up is the writer's own.
+    if (!q->steps.isEmpty()) {
+      closeBlockingWindows();
+    }
     q->loop.quit();
   };
 

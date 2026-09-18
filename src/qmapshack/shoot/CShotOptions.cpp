@@ -51,6 +51,10 @@ void CShotOptions::addOptions(QCommandLineParser& parser) {
       "The screen the panel is on. The session belongs where the writer started it, and a stored "
       "geometry carries a position on the whole desktop.",
       "name");
+  add(parser, "doc-trial",
+      "Replay the recording parked in doc/shots/_cache and store it as the page's scenario of this name if it "
+      "replays. Only the launcher passes it.",
+      "name");
   add(parser, "color-scheme", "Pin the colour scheme instead of following the desktop: light or dark.", "name");
   addFlag(parser, "shoot-selftest",
           "Run the recorder's own cases against this application instead of taking a page's shots. Needs --shoot and "
@@ -69,6 +73,7 @@ CShotOptions::opts_t CShotOptions::read(const QCommandLineParser& parser) {
   opts.docChannel = parser.value("doc-channel");
   opts.docPython = parser.value("doc-python");
   opts.docScreen = parser.value("doc-screen");
+  opts.docTrial = parser.value("doc-trial");
   opts.colorScheme = parser.value("color-scheme");
   opts.shootSelfTest = parser.isSet("shoot-selftest");
   return opts;

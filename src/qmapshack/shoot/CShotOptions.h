@@ -37,6 +37,7 @@ class CShotOptions {
     QString docChannel;         /**< --doc-channel, where the state process reports back to */
     QString docPython;          /**< --doc-python */
     QString docScreen;          /**< --doc-screen, where the panel belongs */
+    QString docTrial;           /**< --doc-trial, the parked recording to replay and store under this name */
     QString colorScheme;        /**< --color-scheme, light or dark; empty follows the desktop */
     bool shootSelfTest = false; /**< --shoot-selftest, the recorder's cases instead of a page */
   };
