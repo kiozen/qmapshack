@@ -725,11 +725,15 @@ void CShotDocLauncher::retakeShot(const QString& id) {
 }
 
 void CShotDocLauncher::retakePage() {
-  runShots(replayJob, {"replay", "--only", page + "/*"}, [this](bool ok, const QString& error) {
-    refreshPanel(
-        ok ? QString("Every picture of this page still replays. Nothing here changed.")
-           : QString("Some pictures do not replay any more; the console says which step fails. %1").arg(error));
-  });
+  // Headless into _work, like Take again for every row: each is judged side by side and published or reverted.
+  runShots(replayJob, {"-o", repo.absoluteFilePath("doc/images/_work"), "replay", "--only", page + "/*"},
+           [this](bool ok, const QString& error) {
+             refreshPanel(ok ? QString("Every picture of this page was taken again; compare them, revert what is not "
+                                       "better, then Publish all.")
+                             : QString("Some pictures do not replay any more; the console says which step fails. "
+                                       "The others were taken again. %1")
+                                   .arg(error));
+           });
 }
 
 void CShotDocLauncher::watchPage() {
