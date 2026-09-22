@@ -1386,6 +1386,21 @@ or run it belongs to is the bug this subsystem invites; keep what runs in these 
   `doc/shots/_cache/doc-panel.ini` (`CShotFiles::placementFile()`), applied one event loop after show;
   a position whose screen is gone is ignored. The state saves the window's 300 ms after it stops moving, once ready.
   No `WindowStaysOnTopHint`; `reject()` swallows Escape.
+- **Every panel button is a `QToolButton` with its label under the icon** (`newButton()`, labels at
+  `kLabelScale` of the panel font), the name leading its tooltip. All share one height, each as wide
+  as its label (Record as wide as Stop): one common width set by "Publish all" made the panel 565 px
+  wide, so that button's label is "Publ. All" and the panel's minimum is 440 px (measured, DejaVu Sans
+  10). The `Doc*` icons are drawn for it. Enabling follows what is possible:
+  Rename/Delete need a scenario, Base needs `(base)` (`updateScenarioActions()`); Retake needs a shot
+  naming `widget`/`exposure`, Revert a work picture or kept entry, Publish a work picture
+  (`row_t::takeable`/`revertable`/`changed`, `updateShotActions()`).
+- **Record asks for the name first** (`askRecordingName()`): the selected scenario is the default,
+  OK only for a valid name, replacing an existing one asks. Stop stores under it without asking.
+- **Selecting a scenario deselects a shot taken in another one; a rebind selects the shot and enters
+  its new scenario.**
+- **Publish is per shot or per page** (`shots.py publish --only <id>` / `<page>/*`); closing the
+  session publishes all of `_work`. A `QFileSystemWatcher` on the page and shot file and their
+  folders refreshes the panel 300 ms after an edit made outside it.
 - **Every `shots.py` run uses `--doc-python`** (`shots.py take` passes `sys.executable`), never
   `python3` from `PATH` (a Store alias on Windows): `compose` before each state, `replay` for Take again
   and Take all again, `publish`.

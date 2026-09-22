@@ -230,6 +230,10 @@ QList<CShotFiles::row_t> CShotFiles::rows() const {
     row.scenario = shot["scenario"].toString();
     row.note = shot["note"].toString();
     row.changed = QFileInfo::exists(workImage(row.id));
+    // A rebound shot is reduced to its id and scenario and photographs nothing.
+    // CShotPage::run() and shots.py replay skip the others.
+    row.takeable = shot.contains("widget") || shot.contains("exposure");
+    row.revertable = row.changed || QFileInfo::exists(workEntry(row.id));
     row.publishedPath = QFileInfo::exists(publishedImage(row.id)) ? publishedImage(row.id) : QString();
     row.imagePath = row.changed ? workImage(row.id) : row.publishedPath;
     row.state = !anywhere.contains(row.id) ? eNotUsed : (row.imagePath.isEmpty() ? eNoImage : eTaken);
@@ -247,6 +251,7 @@ QList<CShotFiles::row_t> CShotFiles::rows() const {
     row_t row;
     row.id = id;
     row.changed = QFileInfo::exists(workImage(id));
+    row.revertable = row.changed || QFileInfo::exists(workEntry(id));
     row.publishedPath = QFileInfo::exists(publishedImage(id)) ? publishedImage(id) : QString();
     row.imagePath = row.changed ? workImage(id) : row.publishedPath;
     // A picture without a shot was drawn by hand or taken before the shot file.

@@ -31,7 +31,6 @@
 class QLabel;
 class QListWidget;
 class QMessageBox;
-class QPushButton;
 class QToolButton;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -55,7 +54,7 @@ class CShotDocPanel : public QDialog {
   /** @return the selected picture's id, empty when none is selected */
   QString currentId() const;
 
-  /** @brief Select the picture @p id; nothing when there is no such row. */
+  /** @brief Select the picture @p id; no picture is selected when there is no such row. */
   void setCurrentShot(const QString& id);
 
   void setPickedHandler(std::function<void(const QString&)> handler) { picked = handler; }
@@ -71,7 +70,8 @@ class CShotDocPanel : public QDialog {
   void setResetShotHandler(std::function<void(const QString&)> handler) { resetShot = handler; }
   void setRetakePageHandler(std::function<void()> handler) { retakePage = handler; }
   void setReapHandler(std::function<void()> handler) { reap = handler; }
-  void setReloadHandler(std::function<void()> handler) { reload = handler; }
+  void setPublishShotHandler(std::function<void(const QString&)> handler) { publishShot = handler; }
+  /** @brief Publish every picture of the page taken again. */
   void setPublishHandler(std::function<void()> handler) { publish = handler; }
   /** @brief Asked before a close is accepted; false keeps the panel open, and must only follow a question. */
   void setCloseRequestHandler(std::function<bool()> handler) { closeRequest = handler; }
@@ -107,6 +107,8 @@ class CShotDocPanel : public QDialog {
   QPixmap comparison(const QString& before, const QString& after) const;
   void buildScenarioCell(QTreeWidgetItem* row, const CShotFiles::row_t& entry);
   void updateShotActions();
+  /** @brief Rename and Delete for a scenario, Base for (base), nothing while recording */
+  void updateScenarioActions();
   static QString label(CShotFiles::state_e state);
 
   std::function<void(const QString&)> picked;
@@ -121,7 +123,7 @@ class CShotDocPanel : public QDialog {
   std::function<void(const QString&)> resetShot;
   std::function<void()> retakePage;
   std::function<void()> reap;
-  std::function<void()> reload;
+  std::function<void(const QString&)> publishShot;
   std::function<void()> publish;
   std::function<bool()> closeRequest;
   std::function<void()> closed;
@@ -130,13 +132,20 @@ class CShotDocPanel : public QDialog {
 
   QListWidget* scenarios = nullptr;
   QTreeWidget* shots = nullptr;
-  QPushButton* recordButton = nullptr;
-  QPushButton* reapButton = nullptr;
+  QToolButton* recordButton = nullptr;
+  QToolButton* reapButton = nullptr;
+  QToolButton* publishButton = nullptr;
+  QToolButton* publishAllButton = nullptr;
+  QToolButton* renameButton = nullptr;
+  QToolButton* deleteButton = nullptr;
+  QToolButton* baseButton = nullptr;
   QToolButton* againButton = nullptr;
   QToolButton* regionButton = nullptr;
   QToolButton* revertButton = nullptr;
   /** Disabled while a recording runs. */
-  QList<QPushButton*> whileIdle;
+  QList<QToolButton*> whileIdle;
+  /** Every button; all share one height (newButton()). */
+  QList<QToolButton*> buttons;
   QLabel* page = nullptr;
   QLabel* status = nullptr;
   QLabel* preview = nullptr;
