@@ -91,7 +91,6 @@ constexpr qint32 kPlacementSettleMs = 300;
 /** QWidget::saveGeometry()'s magic number and the only major version portableGeometry() knows. */
 constexpr quint32 kGeometryMagic = 0x1D9D0CB;
 constexpr quint16 kGeometryMajor = 3;
-const QString kBaseConfig = QStringLiteral("doc/shots/fixture/shots.ini");
 const QString kSetupConfig = QStringLiteral("setup.ini");
 
 /** Collects the `shoot:` warnings given during its lifetime, so a writer without a console reads them. */
@@ -355,7 +354,7 @@ void CShotDocMode::slotSetUp() {
   }
 
   const QString& name = trial.isEmpty() ? label(scenario) : trial;
-  if (0 != CShotFixture::load(repo.absoluteFilePath("doc/shots/fixture"), *ctx)) {
+  if (0 != CShotFixture::load(*ctx)) {
     send(trial.isEmpty() ? QString("ready The fixture did not load in %1. The console says why.").arg(name)
                          : QString("trial-failed The fixture did not load, so %1 was not stored.").arg(name));
     if (!trial.isEmpty()) {
@@ -1052,16 +1051,18 @@ void CShotDocMode::updateScenario(const QString& target) {
   }
 
   qint32 dropped = 0;
-  const qint32 stored = storeSettings(repo.absoluteFilePath(kBaseConfig), dropped);
+  const qint32 stored = storeSettings(files.baseFile(), dropped);
   if (stored < 0) {
-    report(QString("%1 cannot be written.").arg(kBaseConfig));
+    report(QString("%1 cannot be written.").arg(repo.relativeFilePath(files.baseFile())));
     return;
   }
   snapshotSetup();
-  report(QString("%1 settings are the base now; %2 naming a place on this machine were left out. Scenarios keep the "
-                 "settings they were recorded with.")
-             .arg(stored)
-             .arg(dropped));
+  report(
+      QString(
+          "%1 settings are this page's base now; %2 naming a place on this machine were left out. Scenarios keep the "
+          "settings they were recorded with.")
+          .arg(stored)
+          .arg(dropped));
 }
 
 // --- recording -----------------------------------------------------------------------------------

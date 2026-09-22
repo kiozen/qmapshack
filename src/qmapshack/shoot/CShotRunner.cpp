@@ -20,9 +20,7 @@
 
 #include <QApplication>
 #include <QDebug>
-#include <QDir>
 #include <QEventLoop>
-#include <QFileInfo>
 #include <QTimer>
 #include <QWidget>
 
@@ -60,8 +58,7 @@ void CShotRunner::slotRun() {
   } else {
     const CShotWriter writer(outDir, "en");
     CShotContext ctx(writer);
-    // A page's shot file sits beside the fixture directory.
-    failures = CShotFixture::load(QFileInfo(target).absoluteDir().absoluteFilePath("fixture"), ctx);
+    failures = CShotFixture::load(ctx);
     if (!selfTest) {
       failures += CShotPage::run(target, ctx, only, scenario);
     } else if (0 == failures) {
