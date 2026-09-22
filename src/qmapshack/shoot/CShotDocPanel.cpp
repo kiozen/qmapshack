@@ -28,7 +28,6 @@
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPainter>
-#include <QPushButton>
 #include <QScreen>
 #include <QSettings>
 #include <QTimer>
@@ -36,6 +35,7 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWindow>
+#include <algorithm>
 #include <utility>
 
 #include "theme/CUiTheme.h"
@@ -44,8 +44,16 @@ namespace {
 enum column_e { eColumnId, eColumnState, eColumnScenario };
 
 const QSize kDefaultSize(460, 760);
+/** The buttons' labels, relative to the panel's font. */
+constexpr qreal kLabelScale = 0.85;
 const QString kSizeKey = "panel/size";
 const QString kPosKey = "panel/pos";
+const QString kRecordIcon = ":/icons/DocRecord.svgt";
+const QString kRecordText = "Record";
+const QString kStopIcon = ":/icons/DocStop.svgt";
+const QString kStopText = "Stop";
+const QString kRecordHint = "Name the scenario, start from the base, do what the picture needs, then press Stop.";
+const QString kStopHint = "Stop the recording and store it under the name it was started with.";
 /** Distance of the panel from the screen's top right corner [px]. */
 constexpr qint32 kScreenMargin = 20;
 /** A second centring of the wait box, once the window manager has placed the panel [ms]. */
@@ -84,13 +92,27 @@ CShotDocPanel::CShotDocPanel(const QString& page, const QString& sizeFile, QWidg
       }
     });
   });
+  connect(scenarios, &QListWidget::currentItemChanged, this, [this]() { updateScenarioActions(); });
   layout->addWidget(scenarios);
 
-  const auto addButton = [this](QBoxLayout* row, const QString& text, const QString& hint,
-                                const std::function<void()>* call) {
-    QPushButton* button = new QPushButton(text, this);
-    button->setToolTip(hint);
-    connect(button, &QPushButton::clicked, this, [call]() {
+  const qint32 side = fontMetrics().height() + 2;
+  QFont label = font();
+  label.setPointSizeF(label.pointSizeF() * kLabelScale);
+  const auto newButton = [this, side, label](const QString& icon, const QString& text, const QString& hint) {
+    QToolButton* button = new QToolButton(this);
+    button->setIcon(QIcon(icon));
+    button->setIconSize(QSize(3 * side / 2, 3 * side / 2));
+    button->setText(text);
+    button->setFont(label);
+    button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+    button->setToolTip(QString("<b>%1</b>: %2").arg(text, hint));
+    buttons << button;
+    return button;
+  };
+  const auto addButton = [this, &newButton](QBoxLayout* row, const QString& icon, const QString& text,
+                                            const QString& hint, const std::function<void()>* call) {
+    QToolButton* button = newButton(icon, text, hint);
+    connect(button, &QToolButton::clicked, this, [call]() {
       if (*call) {
         (*call)();
       }
@@ -100,16 +122,17 @@ CShotDocPanel::CShotDocPanel(const QString& page, const QString& sizeFile, QWidg
   };
 
   QHBoxLayout* scenarioButtons = new QHBoxLayout;
-  recordButton = addButton(scenarioButtons, "Record...",
-                           "Start from the base, do what the picture needs, then press Stop recording.", &record);
-  whileIdle << addButton(scenarioButtons, "Rename...", "Give the selected scenario another name.", &rename);
-  whileIdle << addButton(scenarioButtons, "Delete",
-                         "Delete the selected scenario; every picture taken in it has to be taken again.",
-                         &deleteScenario);
-  whileIdle << addButton(scenarioButtons, "Save config",
+  recordButton = addButton(scenarioButtons, kRecordIcon, kRecordText, kRecordHint, &record);
+  renameButton = addButton(scenarioButtons, ":/icons/DocRename.svgt", "Rename",
+                           "Give the selected scenario another name.", &rename);
+  deleteButton =
+      addButton(scenarioButtons, ":/icons/DocDelete.svgt", "Delete",
+                "Delete the selected scenario; every picture taken in it has to be taken again.", &deleteScenario);
+  baseButton = addButton(scenarioButtons, ":/icons/DocBase.svgt", "Base",
                          "Store the arrangement, size, map and settings on screen as (base), which it asks first; "
                          "a scenario keeps what it was recorded with.",
                          &storeConfig);
+  scenarioButtons->addStretch();
   layout->addLayout(scenarioButtons);
 
   // --- pictures ---
@@ -141,15 +164,9 @@ CShotDocPanel::CShotDocPanel(const QString& page, const QString& sizeFile, QWidg
   layout->addWidget(shots);
 
   QHBoxLayout* shotActions = new QHBoxLayout;
-  const qint32 side = fontMetrics().height() + 2;
   const auto addShotAction = [&](const QString& icon, const QString& text, const QString& hint,
                                  const std::function<void(const QString&)>* call) {
-    QToolButton* button = new QToolButton(this);
-    button->setIcon(QIcon(icon));
-    button->setIconSize(QSize(side, side));
-    button->setText(text);
-    button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    button->setToolTip(hint);
+    QToolButton* button = newButton(icon, text, hint);
     button->setEnabled(false);
     connect(button, &QToolButton::clicked, this, [this, call]() {
       const QString& id = currentId();
@@ -160,14 +177,30 @@ CShotDocPanel::CShotDocPanel(const QString& page, const QString& sizeFile, QWidg
     shotActions->addWidget(button);
     return button;
   };
-  againButton = addShotAction(":/icons/Screenshot.svgt", "Take again",
+  againButton = addShotAction(":/icons/DocRetake.svgt", "Retake",
                               "Replay this picture into doc/images/_work; the application on screen is not touched.",
                               &retakeShot);
-  regionButton = addShotAction(":/icons/SelectArea.svgt", "Region",
+  regionButton = addShotAction(":/icons/DocRegion.svgt", "Region",
                                "Drag a rectangle for this picture instead of pointing at one widget.", &takeRegion);
   revertButton = addShotAction(
-      ":/icons/Reset.svgt", "Revert",
+      ":/icons/DocRevert.svgt", "Revert",
       "Throw the picture just taken away and put the shot back as it was; the published one stays.", &resetShot);
+  publishButton = addShotAction(":/icons/DocPublish.svgt", "Publish", "Copy this picture taken again into doc/images.",
+                                &publishShot);
+
+  // The page's own actions, apart from the selected picture's.
+  shotActions->addSpacing(side);
+  whileIdle << addButton(shotActions, ":/icons/DocRetakeAll.svgt", "All",
+                         "Replay every picture of this page into doc/images/_check; nothing here changes.",
+                         &retakePage);
+  reapButton = addButton(shotActions, ":/icons/DocClean.svgt", "Clean",
+                         "Delete the shots and pictures of this page no page line uses.", &reap);
+  whileIdle << reapButton;
+  publishAllButton = addButton(shotActions, ":/icons/DocPublishAll.svgt", "Publish all",
+                               "Copy every picture of this page taken again into doc/images.", &publish);
+  // Short on the button, where the longest label sets the panel's width; the tooltip keeps the name.
+  publishAllButton->setText("Publ. All");
+  whileIdle << publishAllButton;
   shotActions->addStretch();
   layout->addLayout(shotActions);
 
@@ -177,20 +210,22 @@ CShotDocPanel::CShotDocPanel(const QString& page, const QString& sizeFile, QWidg
   preview->setFrameShape(QFrame::StyledPanel);
   layout->addWidget(preview);
 
-  QHBoxLayout* pageButtons = new QHBoxLayout;
-  whileIdle << addButton(pageButtons, "Take all again",
-                         "Replay every picture of this page into doc/images/_check; nothing here changes.",
-                         &retakePage);
-  reapButton =
-      addButton(pageButtons, "Remove unused", "Delete the shots and pictures of this page no page line uses.", &reap);
-  whileIdle << reapButton;
-  whileIdle << addButton(pageButtons, "Reload page", "Read the page's image lines again.", &reload);
-  whileIdle << addButton(pageButtons, "Publish", "Copy the pictures taken again into doc/images.", &publish);
-  layout->addLayout(pageButtons);
-
   status = new QLabel(this);
   status->setWordWrap(true);
   layout->addWidget(status);
+
+  // One height for all, each as wide as its label and never narrower than tall; Record turns into Stop.
+  qint32 height = 0;
+  for (const QToolButton* button : std::as_const(buttons)) {
+    height = qMax(height, button->sizeHint().height());
+  }
+  for (QToolButton* button : std::as_const(buttons)) {
+    const qint32 width =
+        (button == recordButton)
+            ? qMax(button->sizeHint().width(), button->fontMetrics().horizontalAdvance(kStopText) + height / 2)
+            : button->sizeHint().width();
+    button->setFixedSize(qMax(width, height), height);
+  }
 
   resize(kDefaultSize);
 }
@@ -262,9 +297,20 @@ void CShotDocPanel::setScenarios(const QStringList& names, const QString& curren
   for (qint32 row = 0; row < scenarios->count(); row++) {
     if (scenarios->item(row)->data(Qt::UserRole).toString() == current) {
       scenarios->setCurrentRow(row);
-      return;
+      break;
     }
   }
+  updateScenarioActions();
+}
+
+void CShotDocPanel::updateScenarioActions() {
+  // (base) is no scenario: it has no name to change and cannot go, and it is the only state its config is stored from.
+  const QListWidgetItem* item = scenarios->currentItem();
+  const bool idle = !recording && nullptr != item;
+  const bool base = nullptr != item && item->data(Qt::UserRole).toString().isEmpty();
+  renameButton->setEnabled(idle && !base);
+  deleteButton->setEnabled(idle && !base);
+  baseButton->setEnabled(idle && base);
 }
 
 void CShotDocPanel::buildScenarioCell(QTreeWidgetItem* row, const CShotFiles::row_t& entry) {
@@ -317,7 +363,11 @@ void CShotDocPanel::setShots(const QList<CShotFiles::row_t>& shots_) {
     unused += (CShotFiles::eNotUsed == entry.state) ? 1 : 0;
   }
   reapButton->setEnabled(unused > 0 && shots->isEnabled());
-  reapButton->setText(unused > 0 ? QString("Remove %1 unused").arg(unused) : QString("Remove unused"));
+  const bool waiting =
+      std::any_of(entries.cbegin(), entries.cend(), [](const CShotFiles::row_t& e) { return e.changed; });
+  publishAllButton->setEnabled(waiting && shots->isEnabled());
+  reapButton->setToolTip(
+      QString("<b>Clean</b>: delete the shots and pictures of this page no page line uses: %1.").arg(unused));
 
   setCurrentShot(current);
   showPreview();
@@ -336,10 +386,10 @@ void CShotDocPanel::centreWaiting() {
 void CShotDocPanel::updateShotActions() {
   const CShotFiles::row_t& entry = entries.value(shots->indexOfTopLevelItem(shots->currentItem()));
   const bool selected = !entry.id.isEmpty() && shots->isEnabled();
-  // A picture nothing ever took has no shot to take again.
-  againButton->setEnabled(selected && (CShotFiles::eTaken == entry.state || CShotFiles::eNoImage == entry.state));
+  againButton->setEnabled(selected && entry.takeable);
   regionButton->setEnabled(selected);
-  revertButton->setEnabled(selected && entry.changed);
+  revertButton->setEnabled(selected && entry.revertable);
+  publishButton->setEnabled(selected && entry.changed);
 }
 
 void CShotDocPanel::showPreview() {
@@ -423,11 +473,14 @@ void CShotDocPanel::setRecording(bool on) {
     return;
   }
   recording = on;
-  recordButton->setText(on ? "Stop recording" : "Record...");
-  for (QPushButton* button : std::as_const(whileIdle)) {
+  recordButton->setText(on ? kStopText : kRecordText);
+  recordButton->setIcon(QIcon(on ? kStopIcon : kRecordIcon));
+  recordButton->setToolTip(QString("<b>%1</b>: %2").arg(on ? kStopText : kRecordText, on ? kStopHint : kRecordHint));
+  for (QToolButton* button : std::as_const(whileIdle)) {
     button->setEnabled(!on);
   }
   scenarios->setEnabled(!on);
+  updateScenarioActions();
   shots->setEnabled(!on);
   updateShotActions();
   if (!on) {
@@ -464,4 +517,5 @@ void CShotDocPanel::setCurrentShot(const QString& id) {
       return;
     }
   }
+  shots->setCurrentItem(nullptr);
 }

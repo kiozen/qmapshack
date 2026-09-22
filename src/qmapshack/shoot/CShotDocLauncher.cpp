@@ -20,21 +20,29 @@
 
 #include <QApplication>
 #include <QDebug>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileSystemWatcher>
 #include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
+#include <QLineEdit>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QMessageBox>
 #include <QProcess>
 #include <QProxyStyle>
+#include <QPushButton>
 #include <QScreen>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QVBoxLayout>
 #include <cstdlib>
+#include <utility>
 
 #include "CMainWindow.h"
 #include "setup/CAppOpts.h"
@@ -91,11 +99,19 @@ void CShotDocLauncher::start() {
   panel->setPickedHandler([this](const QString& id) { showShot(id); });
   panel->setScenarioPickedHandler([this](const QString& name) {
     selectedScenario = name;
+    // A shot taken in another scenario is not what this one is for; one without a shot is taken anywhere.
+    if (const QJsonObject& shot = files.shot(selectedShot); !shot.isEmpty() && shot["scenario"].toString() != name) {
+      selectedShot.clear();
+    }
     enterScenario(name);
   });
   panel->setRecordHandler([this]() {
     if (!state.isNull() && state->isRecording()) {
       command("stop");
+      return;
+    }
+    recordingName = askRecordingName();
+    if (recordingName.isEmpty()) {
       return;
     }
     // A recording always starts from the base, so it stores a whole state.
@@ -111,8 +127,8 @@ void CShotDocLauncher::start() {
   panel->setResetShotHandler([this](const QString& id) { revertShot(id); });
   panel->setRetakePageHandler([this]() { retakePage(); });
   panel->setReapHandler([this]() { reapUnused(); });
-  panel->setReloadHandler([this]() { refreshPanel("The page was read again."); });
-  panel->setPublishHandler([this]() { publishPictures(false); });
+  panel->setPublishShotHandler([this](const QString& id) { publishPictures(false, id); });
+  panel->setPublishHandler([this]() { publishPictures(false, page + "/*"); });
   panel->setCloseRequestHandler([this]() { return mayClose(); });
   panel->setClosedHandler([this]() {
     qDebug() << "doc: the panel was closed, the session ends";
@@ -237,8 +253,15 @@ void CShotDocLauncher::onStateReport(const QString& what, const QString& rest) {
     updateBusy();
   } else if ("recorded-pending" == what) {
     updateBusy();
-    nameRecording(rest);
+    // Named when Record was pressed.
+    if (recordingName.isEmpty()) {
+      command("discard");
+      refreshPanel("The recording has no name and was thrown away; record again.");
+    } else {
+      command("name " + std::exchange(recordingName, QString()));
+    }
   } else if ("recorded-none" == what) {
+    recordingName.clear();
     updateBusy();
     refreshPanel("Nothing was recorded.");
   } else if ("recorded" == what) {
@@ -437,21 +460,44 @@ void CShotDocLauncher::actOnShot(const QString& verb, const QString& id) {
   enterScenario(scenario, verb + " " + id);
 }
 
-void CShotDocLauncher::nameRecording(const QString& suggestion) {
-  bool ok = false;
-  const QString& name = QInputDialog::getText(panel, "Record a scenario", "What is this scenario called?",
-                                              QLineEdit::Normal, suggestion, &ok);
-  if (!ok) {
-    command("discard");
-    refreshPanel("The recording was thrown away.");
-    return;
+QString CShotDocLauncher::askRecordingName() {
+  QDialog dialog(panel);
+  dialog.setWindowTitle("Record a scenario");
+  QVBoxLayout* layout = new QVBoxLayout(&dialog);
+  layout->addWidget(new QLabel("What is this scenario called?", &dialog));
+  QLineEdit* edit = new QLineEdit(selectedScenario, &dialog);
+  layout->addWidget(edit);
+  QLabel* problem = new QLabel(&dialog);
+  problem->setWordWrap(true);
+  layout->addWidget(problem);
+  QDialogButtonBox* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+  layout->addWidget(buttons);
+  connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+  const auto check = [this, edit, problem, buttons]() {
+    const QString& text = edit->text();
+    QString why = CShotFiles::nameProblem(text);
+    if (const QString& twin = files.caseTwinOf(text); why.isEmpty() && !twin.isEmpty()) {
+      why = QString("%1 differs from the scenario %2 only in case.").arg(text, twin);
+    }
+    // An empty field is not an error yet, only not a name.
+    problem->setText(text.isEmpty() ? QString() : why);
+    buttons->button(QDialogButtonBox::Ok)->setEnabled(why.isEmpty());
+  };
+  connect(edit, &QLineEdit::textChanged, &dialog, check);
+  check();
+
+  while (QDialog::Accepted == dialog.exec()) {
+    const QString& name = edit->text();
+    if (!files.scenarioNames().contains(name) ||
+        QMessageBox::Yes == QMessageBox::question(panel, "Record a scenario",
+                                                  QString("%1 exists. Record it again and replace it?").arg(name),
+                                                  QMessageBox::Yes | QMessageBox::No, QMessageBox::No)) {
+      return name;
+    }
   }
-  if (const QString& problem = CShotFiles::nameProblem(name); !problem.isEmpty()) {
-    command("discard");
-    refreshPanel(problem + " The recording was thrown away; record again.");
-    return;
-  }
-  command("name " + name);
+  return QString();
 }
 
 void CShotDocLauncher::storeConfig() {
@@ -552,6 +598,10 @@ void CShotDocLauncher::rebindShot(const QString& id, const QString& scenario) {
     return;
   }
   notify("sync");
+  // The shot is now what the scenario is selected for, and the application goes there.
+  selectedShot = id;
+  selectedScenario = scenario;
+  enterScenario(scenario);
   refreshPanel(QString("%1 is taken in %2 now.").arg(id, label(scenario)));
 }
 
@@ -634,10 +684,38 @@ void CShotDocLauncher::retakePage() {
   });
 }
 
-void CShotDocLauncher::publishPictures(bool thenEnd) {
+void CShotDocLauncher::watchPage() {
+  if (nullptr == watcher) {
+    watcher = new QFileSystemWatcher(this);
+    QTimer* settle = new QTimer(this);
+    settle->setSingleShot(true);
+    // An editor saves in several steps; one refresh after the last.
+    settle->setInterval(300);
+    connect(settle, &QTimer::timeout, this, [this]() {
+      watchPage();
+      refreshPanel(QString());
+    });
+    connect(watcher, &QFileSystemWatcher::fileChanged, settle, qOverload<>(&QTimer::start));
+    connect(watcher, &QFileSystemWatcher::directoryChanged, settle, qOverload<>(&QTimer::start));
+  }
+  // A file saved by rename is a new file the watcher lost; its directory sees it appear.
+  for (const QString& file : {files.pageFile(), files.shotFile()}) {
+    for (const QString& path : {file, QFileInfo(file).absolutePath()}) {
+      if (QFileInfo::exists(path) && !watcher->files().contains(path) && !watcher->directories().contains(path)) {
+        watcher->addPath(path);
+      }
+    }
+  }
+}
+
+void CShotDocLauncher::publishPictures(bool thenEnd, const QString& only) {
   const QString& report = QDir(scratch->path()).absoluteFilePath("publish.json");
   QFile::remove(report);
-  runShots(publishJob, {"publish", "--report", report}, [this, report, thenEnd](bool ok, const QString& error) {
+  QStringList args{"publish", "--report", report};
+  if (!only.isEmpty()) {
+    args << "--only" << only;
+  }
+  runShots(publishJob, args, [this, report, thenEnd](bool ok, const QString& error) {
     if (!ok) {
       // A failed publish does not end the session: the next close asks again.
       reportFailure(QString("The pictures could not be published.\n\n%1").arg(error));

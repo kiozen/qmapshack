@@ -444,6 +444,7 @@ qint32 CShotPage::run(const QString& file, CShotContext& ctx, const QString& onl
   }
 
   qint32 taken = 0;
+  qint32 untaken = 0;
   QSet<QString> ids;
   for (const QJsonValue& value : shots) {
     const QJsonObject& shot = value.toObject();
@@ -467,11 +468,18 @@ qint32 CShotPage::run(const QString& file, CShotContext& ctx, const QString& onl
       }
     }
 
+    // Cut down to its id by a delete or rebind: nothing says what to photograph (CShotFiles::row_t::takeable).
+    if (!shot.contains("widget") && !shot.contains("exposure")) {
+      qWarning() << "shoot:" << id << "is not taken yet; take it in the panel";
+      untaken++;
+      continue;
+    }
+
     taken++;
     failures += shootOne(shot, ctx, scenarios);
   }
 
-  if (0 == taken) {
+  if (0 == taken + untaken) {
     qWarning() << "shoot: no shot in" << file << "matches" << only << scenario;
     failures++;
   }
