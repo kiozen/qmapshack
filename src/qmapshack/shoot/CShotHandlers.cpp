@@ -1026,7 +1026,10 @@ class CItemViewHandler : public IShotHandler {
     if (row.isEmpty()) {
       at = pointAt(view->viewport()->rect(), step["at"].toArray());
     } else {
-      // Measured after the scroll.
+      // Measured after the scroll. A row under a collapsed parent was expanded by hand; scrollTo() expands to it.
+      if (!rectOf(view, row).isValid()) {
+        reveal(view, row);
+      }
       const QRect& before = rectOf(view, row);
       if (!before.isValid()) {
         return fail("the view has no such row: " + compact(step));
@@ -1075,6 +1078,14 @@ class CItemViewHandler : public IShotHandler {
   virtual QRect rectOf(const QAbstractItemView* view, const QString& row) const {
     const QModelIndex& index = CShotAddress::resolveRowPath(*view->model(), row);
     return index.isValid() ? view->visualRect(index) : QRect();
+  }
+
+  /** @brief Scroll to @p row, which expands its collapsed parents in a tree */
+  virtual void reveal(QAbstractItemView* view, const QString& row) const {
+    const QModelIndex& index = CShotAddress::resolveRowPath(*view->model(), row);
+    if (index.isValid()) {
+      view->scrollTo(index);
+    }
   }
 
   /** @brief Scroll @p row to the top; false when there is no such row */
@@ -1342,6 +1353,13 @@ class CWksListHandler : public CRowButtonHandler<CWksItemDelegate> {
     const CGisListWks* list = static_cast<const CGisListWks*>(view);
     QTreeWidgetItem* item = CShotAddress::resolveItemPath(*list, row);
     return (nullptr == item) ? QRect() : list->visualItemRect(item);
+  }
+
+  void reveal(QAbstractItemView* view, const QString& row) const override {
+    CGisListWks* list = static_cast<CGisListWks*>(view);
+    if (QTreeWidgetItem* item = CShotAddress::resolveItemPath(*list, row); nullptr != item) {
+      list->scrollToItem(item);
+    }
   }
 
   bool scrollToTop(QAbstractItemView* view, const QString& row) const override {

@@ -1118,6 +1118,14 @@ doc/shots/fixture/shots.ini    the base a page opens on
   reuses the tab the first opened (self test).
 - **The `tab` index and splitter states are applied with the leading `layout`, before the steps**:
   they are taken when the recording starts, so applied last they undo a step (Edit's details tab).
+- **A context menu is photographed by its shot, not its scenario**: Ctrl+Shift+F9 on a menu a
+  context request opened stores that request's step as the shot's `open`
+  (`CShotRecorder::contextMenuStep()`, recording or not); `shootOne()` appends it to the steps and
+  takes the picture inside the menu's `exec()`. A row step reveals a row under a collapsed parent
+  (`reveal()`, `scrollTo()` expands it), so a menu taken on a row expanded by hand replays. A shot with
+  `open` sizes the main window before the steps and renders the menu at its own size, like a scenario's. The
+  highlighted entry is stored as `active` (the action's `objectName`, searched in `menu->actions()`:
+  a context menu's actions belong to the view that built it) and set with `setActiveAction()`.
 - **A canvas step waits for `isDrawComplete()` first** (`CCanvasHandler::settle()`): items' pixels
   are updated by the draw, so a `hit` or click right after a wheel zoom finds nothing (measured: 4 of
   8 replays of a zoom-then-select scenario failed without it).
@@ -1376,7 +1384,7 @@ or run it belongs to is the bug this subsystem invites; keep what runs in these 
   again. An ending session skips the question - work pictures stay in `_work` for the next one.
 - **The panel's size and position and the application window's position** live in
   `doc/shots/_cache/doc-panel.ini` (`CShotFiles::placementFile()`), applied one event loop after show;
-  a position whose screen is gone is ignored. The state saves the window's on every move once ready.
+  a position whose screen is gone is ignored. The state saves the window's 300 ms after it stops moving, once ready.
   No `WindowStaysOnTopHint`; `reject()` swallows Escape.
 - **Every `shots.py` run uses `--doc-python`** (`shots.py take` passes `sys.executable`), never
   `python3` from `PATH` (a Store alias on Windows): `compose` before each state, `replay` for Take again
