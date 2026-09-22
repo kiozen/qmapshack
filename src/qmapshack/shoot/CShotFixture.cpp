@@ -19,7 +19,6 @@
 #include "shoot/CShotFixture.h"
 
 #include <QDebug>
-#include <QDir>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFileInfo>
@@ -33,10 +32,12 @@
 #include "gis/rte/CGisItemRte.h"
 #include "gis/trk/CGisItemTrk.h"
 #include "gis/wpt/CGisItemWpt.h"
+#include "helpers/CSettings.h"
 #include "shoot/CShotContext.h"
 
 namespace {
-const QString kProject = "projects/Example.qms";
+/** The project to load; `shots.py compose` writes the page fixture's. */
+const QString kProjectKey = "Shoot/fixtureProject";
 constexpr qint32 kLoadTimeoutMs = 10000;
 constexpr qint32 kPollMs = 50;
 
@@ -79,10 +80,14 @@ T* firstItem(IGisProject* project) {
 }
 }  // namespace
 
-qint32 CShotFixture::load(const QString& dir, CShotContext& ctx) {
-  const QString& filename = QDir(dir).absoluteFilePath(kProject);
-  if (!QFileInfo::exists(filename)) {
-    qWarning() << "shoot: there is no fixture project" << filename;
+qint32 CShotFixture::load(CShotContext& ctx) {
+  QString filename;
+  {
+    SETTINGS;
+    filename = cfg.value(kProjectKey).toString();
+  }
+  if (filename.isEmpty() || !QFileInfo::exists(filename)) {
+    qWarning() << "shoot: there is no fixture project" << filename << "- the configuration names it as" << kProjectKey;
     return 1;
   }
 

@@ -46,9 +46,14 @@ CHECK_DIR = IMAGES_DIR / "_check"
 WORK_DIR = IMAGES_DIR / "_work"
 PAGES_DIR = REPO / "doc" / "pages"
 SHOTS_DIR = REPO / "doc" / "shots"
-FIXTURE_DIR = SHOTS_DIR / "fixture"
-FIXTURE_INI = FIXTURE_DIR / "shots.ini"
-FIXTURE_DB = FIXTURE_DIR / "database" / "Example.db"
+FIXTURES_DIR = SHOTS_DIR / "fixtures"
+DEFAULT_FIXTURE = FIXTURES_DIR / "default"
+# Seeds a new page's base; a page's pictures only ever use the page's own.
+DEFAULT_BASE = DEFAULT_FIXTURE / "shots.ini"
+# The self test's own base: it checks the recorder, so no page's arrangement may move its cases.
+SELFTEST_BASE = Path(__file__).resolve().parent / "selftest.ini"
+# Names the default fixture's folder, so it cannot name a page.
+RESERVED_PAGES = ("default",)
 # One tile cache for every run and the writer's session; git-ignored.
 CACHE_DIR = SHOTS_DIR / "_cache"
 
@@ -116,33 +121,66 @@ def ini_string(value):
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def compose_config(page, scenario, out, source=None):
-    """One scenario's whole configuration: `source`, else its own file, else the fixture's base.
+def page_base(page):
+    """The page's own base, a whole configuration copied once when the page was created."""
+    return SHOTS_DIR / f"{page}.ini"
 
-    Never merged, so changing the base cannot move a picture already taken. `source` is what a trial
-    replays a parked recording against: the settings the recording started from. Paths use forward
+
+# A fixture's parts, one folder each; CShotFiles kFixtureParts.
+FIXTURE_PARTS = ("projects", "maps", "dem", "poi", "routino", "database")
+# Describe a part, and are no part of it; CShotFiles kFixtureNotes.
+FIXTURE_NOTES = ("SOURCE.md", "README.md")
+
+
+def fixture_part(page, part):
+    """A page's fixture holds only what differs: a part holding something replaces the default's whole.
+
+    The launcher creates every part's folder empty, so an empty one is the default's; so is one holding
+    only a description or a dotfile a file manager left.
+    """
+    own = FIXTURES_DIR / page / part
+    holds = own.is_dir() and any(p.name not in FIXTURE_NOTES and not p.name.startswith(".") for p in own.iterdir())
+    return own if holds else DEFAULT_FIXTURE / part
+
+
+def compose_config(page, scenario, out, source=None):
+    """One scenario's whole configuration: `source`, else its own file, else the page's base.
+
+    Never merged, so changing a base cannot move a picture already taken. `source` is what a trial
+    replays a parked recording against: the settings the recording started from. A page without a
+    base yet - the launcher before it asked for one - composes the default's. Paths use forward
     slashes: QSettings reads a backslash as an escape.
     """
     own = SHOTS_DIR / page / f"{scenario}.ini" if scenario else None
     if source is None:
-        source = own if own is not None and own.is_file() else FIXTURE_INI
+        if own is not None and own.is_file():
+            source = own
+        else:
+            source = page_base(page) if page_base(page).is_file() else DEFAULT_BASE
     data = read_ini(source)
 
     # With it on, a run saves its workspace and CShotFixture refuses the next one.
     data["Database/saveOnExit"] = "false"
     data["Canvas/cachePath"] = ini_string(CACHE_DIR.as_posix())
-    data["Canvas/mapPath"] = ini_string((FIXTURE_DIR / "maps").as_posix())
+    data["Canvas/mapPath"] = ini_string(fixture_part(page, "maps").as_posix())
     for key, subdir in (("Canvas/demPaths", "dem"), ("Canvas/poiPaths", "poi"), ("Route/routino\\paths", "routino")):
-        if (FIXTURE_DIR / subdir).is_dir():
-            data[key] = ini_string((FIXTURE_DIR / subdir).as_posix())
+        if fixture_part(page, subdir).is_dir():
+            data[key] = ini_string(fixture_part(page, subdir).as_posix())
+
+    # The application reads the project to load from here; absolute, so no stored configuration keeps it.
+    projects = sorted(fixture_part(page, "projects").glob("*.qms"))
+    if projects:
+        data["Shoot/fixtureProject"] = ini_string(projects[0].as_posix())
 
     # Opening a database migrates an older schema, so a run only ever opens a copy.
-    if FIXTURE_DB.is_file():
-        copy = out.parent / FIXTURE_DB.name
-        shutil.copyfile(FIXTURE_DB, copy)
-        data["Database/names"] = "Example"
-        data["Database/Entries\\Example\\type"] = "SQLite"
-        data["Database/Entries\\Example\\filename"] = ini_string(copy.as_posix())
+    databases = sorted(fixture_part(page, "database").glob("*.db"))
+    if databases:
+        copy = out.parent / databases[0].name
+        shutil.copyfile(databases[0], copy)
+        name = databases[0].stem
+        data["Database/names"] = name
+        data[f"Database/Entries\\{name}\\type"] = "SQLite"
+        data[f"Database/Entries\\{name}\\filename"] = ini_string(copy.as_posix())
 
     write_ini(out, data)
     return source
@@ -415,7 +453,8 @@ def cmd_selftest(args):
 
     with tempfile.TemporaryDirectory(prefix="qms-selftest-") as scratch:
         config = Path(scratch) / "shots.ini"
-        compose_config(page_file.stem, None, config)
+        # The default fixture, whatever the page's own holds; the shot file only names the run.
+        compose_config(DEFAULT_FIXTURE.name, None, config, source=SELFTEST_BASE)
         cmd = [str(binary), "-platform", "offscreen", "-style", STYLE, "--no-splash", "--config", str(config),
                "--font-family", FONT_FAMILY, "--font-size", FONT_SIZE, "--color-scheme", COLOR_SCHEME,
                "--locale", LOCALE, "--shoot", str(out), "--shoot-target", str(page_file), "--shoot-selftest"]
@@ -522,6 +561,8 @@ def page_name(value):
     parent = path.parent.resolve()
     if path.name == "" or parent not in (Path.cwd().resolve(), PAGES_DIR.resolve(), SHOTS_DIR.resolve()):
         sys.exit(f"{value} is no page: a page is a file directly in {PAGES_DIR.relative_to(REPO)}")
+    if path.name in RESERVED_PAGES:
+        sys.exit(f"{value} is no page: {path.name} names the default fixture")
     return path.name
 
 
@@ -630,7 +671,7 @@ def main():
     replay.set_defaults(func=cmd_replay)
 
     selftest = commands.add_parser("selftest", help="the recorder's own cases: record real input, compare the steps")
-    selftest.add_argument("--page", default="test", help="the shot file whose fixture is loaded (default: %(default)s)")
+    selftest.add_argument("--page", default="test", help="the shot file that names the run; base and fixture are the self test's own (default: %(default)s)")
     selftest.set_defaults(func=cmd_selftest)
 
     unused = commands.add_parser("unused", help="shots and pictures no page references")

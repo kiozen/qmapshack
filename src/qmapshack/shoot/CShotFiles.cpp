@@ -29,6 +29,10 @@
 #include "shoot/CShotPage.h"
 
 namespace {
+/** A fixture's parts, one folder each; shots.py FIXTURE_PARTS. */
+const QStringList kFixtureParts = {"projects", "maps", "dem", "poi", "routino", "database"};
+/** Describe a part and are no part of it; shots.py FIXTURE_NOTES. */
+const QStringList kFixtureNotes = {"SOURCE.md", "README.md"};
 /** @return the index of the shot with @p id, -1 when there is none */
 qsizetype indexOf(const QJsonArray& shots, const QString& id) {
   for (qsizetype i = 0; i < shots.size(); i++) {
@@ -100,6 +104,84 @@ QString CShotFiles::workImage(const QString& id) const {
 
 QString CShotFiles::workEntry(const QString& id) const {
   return staysInside(id) ? repo.absoluteFilePath("doc/images/_work/" + id + ".shot.json") : QString();
+}
+
+QString CShotFiles::baseFile() const { return repo.absoluteFilePath("doc/shots/" + page + ".ini"); }
+
+QList<QPair<QString, QString>> CShotFiles::bases() const {
+  QList<QPair<QString, QString>> found{
+      {"the default fixture's", repo.absoluteFilePath("doc/shots/fixtures/default/shots.ini")}};
+  const QFileInfoList& inis =
+      QDir(repo.absoluteFilePath("doc/shots")).entryInfoList({"*.ini"}, QDir::Files, QDir::Name);
+  for (const QFileInfo& ini : inis) {
+    if (ini.completeBaseName() != page) {
+      found << qMakePair(QString("page %1").arg(ini.completeBaseName()), ini.absoluteFilePath());
+    }
+  }
+  return found;
+}
+
+QString CShotFiles::copyBase(const QString& source) const {
+  QFile in(source);
+  if (!in.open(QIODevice::ReadOnly)) {
+    return QString("%1 cannot be read.").arg(source);
+  }
+  // Swapped in only by commit(), so a failure leaves the old base as it was.
+  QSaveFile out(baseFile());
+  if (!out.open(QIODevice::WriteOnly) || out.write(in.readAll()) < 0 || !out.commit()) {
+    return QString("%1 cannot be written: %2").arg(baseFile(), out.errorString());
+  }
+  return QString();
+}
+
+QString CShotFiles::fixtureDir() const { return repo.absoluteFilePath("doc/shots/fixtures/" + page); }
+
+QStringList CShotFiles::ownFixtureParts() const {
+  QStringList own;
+  for (const QString& part : kFixtureParts) {
+    // Dotfiles are hidden by the filter, as shots.py skips them.
+    const QStringList& entries =
+        QDir(QDir(fixtureDir()).absoluteFilePath(part)).entryList(QDir::AllEntries | QDir::NoDotAndDotDot);
+    for (const QString& entry : entries) {
+      if (!kFixtureNotes.contains(entry)) {
+        own << part;
+        break;
+      }
+    }
+  }
+  return own;
+}
+
+QStringList CShotFiles::fixtureFolders() const {
+  QStringList folders{fixtureDir()};
+  for (const QString& part : kFixtureParts) {
+    folders << QDir(fixtureDir()).absoluteFilePath(part);
+  }
+  return folders;
+}
+
+QString CShotFiles::makeFixtureDir() const {
+  // Also for a folder a writer or an older build made: whatever is missing is added, nothing replaced.
+  for (const QString& part : kFixtureParts) {
+    if (!QDir().mkpath(QDir(fixtureDir()).absoluteFilePath(part))) {
+      return QString("%1 cannot be created.").arg(QDir(fixtureDir()).absoluteFilePath(part));
+    }
+  }
+  const QString& readme = QDir(fixtureDir()).absoluteFilePath("README.md");
+  if (QFileInfo::exists(readme)) {
+    return QString();
+  }
+  QSaveFile out(readme);
+  if (!out.open(QIODevice::WriteOnly)) {
+    return QString("%1 cannot be created.").arg(out.fileName());
+  }
+  out.write(QString("# Fixture of the page %1\n\n"
+                    "Put into a part's folder only what this page needs different from `../default/`: "
+                    "`projects/`, `maps/`, `dem/`, `poi/`, `routino/`, `database/`. A part holding something "
+                    "replaces the default's part whole; an empty or missing one is the default's.\n")
+                .arg(page)
+                .toUtf8());
+  return out.commit() ? QString() : QString("%1 cannot be written.").arg(out.fileName());
 }
 
 QString CShotFiles::placementFile() const { return repo.absoluteFilePath("doc/shots/_cache/doc-panel.ini"); }

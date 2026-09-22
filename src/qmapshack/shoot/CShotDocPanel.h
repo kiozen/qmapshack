@@ -63,6 +63,7 @@ class CShotDocPanel : public QDialog {
   void setRenameHandler(std::function<void()> handler) { rename = handler; }
   void setDeleteScenarioHandler(std::function<void()> handler) { deleteScenario = handler; }
   void setStoreConfigHandler(std::function<void()> handler) { storeConfig = handler; }
+  void setCopyBaseHandler(std::function<void()> handler) { copyBase = handler; }
   /** @brief A picture's combo box changed: id, scenario (empty is `(base)`). */
   void setRebindHandler(std::function<void(const QString&, const QString&)> handler) { rebind = handler; }
   void setRetakeShotHandler(std::function<void(const QString&)> handler) { retakeShot = handler; }
@@ -81,6 +82,8 @@ class CShotDocPanel : public QDialog {
   void setStatus(const QString& text);
 
   void setPage(const QString& path, bool exists);
+  /** @brief Say which fixture parts the page has itself; @p dir is its fixture folder */
+  void setFixture(const QStringList& own, const QString& dir);
 
   /** @brief While a recording runs, everything but Stop is disabled. */
   void setRecording(bool on);
@@ -117,6 +120,7 @@ class CShotDocPanel : public QDialog {
   std::function<void()> rename;
   std::function<void()> deleteScenario;
   std::function<void()> storeConfig;
+  std::function<void()> copyBase;
   std::function<void(const QString&, const QString&)> rebind;
   std::function<void(const QString&)> retakeShot;
   std::function<void(const QString&)> takeRegion;
@@ -147,6 +151,7 @@ class CShotDocPanel : public QDialog {
   /** Every button; all share one height (newButton()). */
   QList<QToolButton*> buttons;
   QLabel* page = nullptr;
+  QLabel* fixture = nullptr;
   QLabel* status = nullptr;
   QLabel* preview = nullptr;
 
