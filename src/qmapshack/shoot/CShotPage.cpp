@@ -18,11 +18,13 @@
 
 #include "shoot/CShotPage.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QDebug>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QMenu>
 #include <QPointer>
 #include <QRect>
 #include <QRegularExpression>
@@ -45,7 +47,8 @@
 #include "shoot/CShotWriter.h"
 
 namespace {
-const QSet<QString> kShotKeys = {"exposure", "id", "note", "rect", "scenario", "set", "size", "widget", "window"};
+const QSet<QString> kShotKeys = {"active",   "exposure", "id",   "note",   "open",  "rect",
+                                 "scenario", "set",      "size", "widget", "window"};
 
 /** Coordinates of two views closer than this are the same place [°]. */
 constexpr qreal kViewEpsilon = 1e-9;
@@ -216,14 +219,19 @@ qint32 CShotPage::shootOne(const QJsonObject& shot, CShotContext& ctx, const QJs
     failures++;
   }
   const bool inScenario = shot.contains("scenario");
+  // Steps run for the picture, measured against the main window's size like a scenario's.
+  const bool stepped = inScenario || shot.contains("open");
   const QString& scenario = shot["scenario"].toString();
   if (inScenario && !scenarios[scenario].isArray()) {
     qWarning() << "shoot:" << id << "wants the scenario" << scenario << "- the ones there are:" << scenarios.keys();
     failures++;
   }
-  // Everything a scenario does is measured against the main window's size.
-  if (inScenario && !size.isValid()) {
-    qWarning() << "shoot:" << id << "is taken in the scenario" << scenario << "and has no size";
+  if (stepped && !size.isValid()) {
+    qWarning() << "shoot:" << id << "runs steps and has no size";
+    failures++;
+  }
+  if (shot.contains("open") && !shot["open"].isObject()) {
+    qWarning() << "shoot:" << id << "has an open that is not a step:" << shot["open"];
     failures++;
   }
   if (shot.contains("exposure") && shot.contains("widget")) {
@@ -240,10 +248,10 @@ qint32 CShotPage::shootOne(const QJsonObject& shot, CShotContext& ctx, const QJs
   }
 
   QWidget* main = CMainWindow::isNull() ? nullptr : &CMainWindow::self();
-  // Before the scenario: restoreState() distributes dock extents in pixels.
-  if (inScenario) {
+  // Before the steps: restoreState() distributes dock extents in pixels.
+  if (stepped) {
     if (nullptr == main) {
-      qWarning() << "shoot:" << id << "is taken in a scenario and there is no main window";
+      qWarning() << "shoot:" << id << "runs steps and there is no main window";
       return 1;
     }
     main->resize(size);
@@ -276,6 +284,23 @@ qint32 CShotPage::shootOne(const QJsonObject& shot, CShotContext& ctx, const QJs
       }
     }
 
+    if (const QString& active = shot["active"].toString(); !active.isEmpty()) {
+      QMenu* menu = qobject_cast<QMenu*>(widget);
+      // A context menu's actions belong to whoever built it, not to the menu.
+      QAction* action = nullptr;
+      const QList<QAction*>& actions = (nullptr == menu) ? QList<QAction*>() : menu->actions();
+      for (QAction* entry : actions) {
+        if (entry->objectName() == active) {
+          action = entry;
+        }
+      }
+      if (nullptr == action) {
+        qWarning() << "shoot:" << id << "has no menu entry" << active << "to highlight";
+        return 1;
+      }
+      menu->setActiveAction(action);
+    }
+
     // Guards against photographing the window behind a dialog that failed to open.
     const QString& window = shot["window"].toString();
     const QString& className = QString::fromLatin1(widget->metaObject()->className());
@@ -288,7 +313,7 @@ qint32 CShotPage::shootOne(const QJsonObject& shot, CShotContext& ctx, const QJs
     const bool sizedByWindow = (widget == main) || (!widget->isWindow() && widget->window() == main);
     // The size a window is rendered at; a window a scenario step opened keeps its own.
     QSize renderSize = size;
-    if (inScenario) {
+    if (stepped) {
       if (widget != main) {
         renderSize = QSize();
       }
@@ -363,7 +388,11 @@ qint32 CShotPage::shootOne(const QJsonObject& shot, CShotContext& ctx, const QJs
 
   // One path with or without a scenario: no steps take the picture at once. A live scenario is on screen already.
   const bool perform = inScenario && ctx.liveScenario() != scenario;
-  const QJsonArray& steps = perform ? scenarios[scenario].toArray() : QJsonArray();
+  QJsonArray steps = perform ? scenarios[scenario].toArray() : QJsonArray();
+  // A context menu is taken inside the exec() its step runs.
+  if (shot.contains("open")) {
+    steps.append(shot["open"]);
+  }
   failures += CShotReplay::replay(steps, ctx, takePicture);
   // The next shot of this run must not start from what the scenario left.
   if (!steps.isEmpty()) {
