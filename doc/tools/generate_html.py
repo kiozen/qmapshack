@@ -14,6 +14,7 @@ and leaves doc/html as it was. No QMapShack build is needed.
 import hashlib
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -67,6 +68,13 @@ def prepare_venv():
     return python
 
 
+def normalize_search_index(path):
+    """Write the source file names with "/", which Sphinx writes with the OS separator."""
+    text = path.read_text(encoding="utf-8")
+    text = re.sub(r'"filenames":\[[^\]]*\]', lambda m: m.group(0).replace("\\\\", "/"), text, count=1)
+    path.write_text(text, encoding="utf-8", newline="")
+
+
 def generate():
     with tempfile.TemporaryDirectory(prefix="qms-doc-html-") as scratch:
         out = Path(scratch) / "html"
@@ -78,6 +86,7 @@ def generate():
         # Build state, not pages: neither belongs in the committed tree.
         (out / ".buildinfo").unlink(missing_ok=True)
         shutil.rmtree(out / "_sources", ignore_errors=True)
+        normalize_search_index(out / "searchindex.js")
 
         shutil.rmtree(HTML_DIR, ignore_errors=True)
         shutil.copytree(out, HTML_DIR)
