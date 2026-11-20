@@ -21,6 +21,7 @@ Write for people who use QMapShack, not for developers. One page answers one que
 | Address the reader as "you". Don't write "we" or "our". | build |
 | Use one idea per paragraph, at most four sentences. | build |
 | Explain a technical term the first time a page uses it, or link to where it's explained. | review |
+| A page stands on its own as far as possible: don't assume the reader has read another page. Say what to do, or link to it; no "as on the previous page". | review |
 
 ## Words
 
@@ -35,11 +36,12 @@ names the one to use. It reads this table, so a new row is checked at once.
 | image | picture, screenshot |
 | toolbar | tool bar |
 | double-click | double click |
+| right-click | right click |
 | click | click on |
 | online, offline | on-line, off-line |
 | Markdown | markdown |
 | alphanumeric | alphanumerical |
-| track point | Track Point, trackpoint |
+| trackpoint | track point, Track Point |
 | color | colour |
 | center | centre |
 | gray | grey |
@@ -74,7 +76,7 @@ A page uses the parts it needs, in this order:
 
 | Rule | Check |
 |---|---|
-| A new page is listed in `doc/index.md`. | Sphinx |
+| A new page is listed in `doc/en/index.md`. | Sphinx |
 | A page has exactly one title (`#`). | build |
 | The file name is lower case letters, digits and hyphens: `track-filters.md`. | build |
 | The file is UTF-8 and contains no tab characters. | build |
@@ -118,8 +120,9 @@ finds it. Write a menu path with arrows:
 |---|---|
 | A label matches the user interface. | review |
 | A menu path uses `→` between the entries. | build |
-| Use **Click** for buttons and menu entries, **Select** in lists, **Choose** for options in a dialog, **Press** for keys. | review |
+| Use **Click** for buttons and menu entries, **Select** in lists, **Choose** for options in a dialog, **Check** and **Clear** for check boxes, **Press** for keys. | review |
 | Write a key as it is labelled: **Ctrl+Shift+F9**. | review |
+| Leave out a label's trailing colon: **Type File**, not **Type File:**. | review |
 
 ## Images
 
@@ -146,7 +149,7 @@ The graphs of a track.
 | Rule | Check |
 |---|---|
 | The image exists. | Sphinx |
-| Images are PNG files in `doc/images/<page>/`. | build |
+| Images are in `doc/<lang>/images/<page>/`: screenshots PNG, drawings and diagrams SVG, photos JPG; GIF and WebP are allowed too. | build |
 | The name is `<subject>[-<variant>]`, lower case with hyphens. | build |
 | An image without alternative text gets its name: `track-details-graphs.png` is "Track details graphs". Choose names that say what the image shows. | review |
 | The image shows only the part the text talks about. | review |
@@ -228,6 +231,20 @@ Remove such a note once the version is two releases old.
 | Rule | Check |
 |---|---|
 | A version note has the form `*Since QMapShack <version>*` or `*Removed in QMapShack <version>*`. | build |
+
+## German
+
+The rules above hold for every language; the build checks German pages only for the ones that don't name English
+words. A German page follows its English page: same sections, steps and images.
+
+| Rule | Check |
+|---|---|
+| Address the reader as *Sie*. | review |
+| Use **Klicken Sie auf** for buttons and menu entries, **Wählen Sie … aus** in lists and for options in a dialog, **Aktivieren Sie** and **Deaktivieren Sie** for check boxes, **Drücken Sie** for keys. | review |
+| Write a label exactly as the German QMapShack shows it (`src/qmapshack/locale/qmapshack_de.ts`). | review |
+| Write a key as Qt names it in German: **Strg**, **Umschalt**, **Hoch**, **Herunter**, **Links**, **Rechts**. | review |
+| Use the words of the German user interface: *Bereich* for a panel, *Gebiet* for an area item, *Wegpunkt*, *Track*, *Route*. | review |
+| Call a button *Knopf*, not *Schaltfläche*. | review |
 
 ## Before the pull request
 
