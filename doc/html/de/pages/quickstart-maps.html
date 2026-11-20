@@ -1,13 +1,16 @@
 <!doctype html>
-<html class="no-js" lang="en" data-content_root="./">
+<html class="no-js" lang="de" data-content_root="../">
   <head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <meta name="color-scheme" content="light dark"><link rel="index" title="Index" href="#"><link rel="search" title="Search" href="search.html">
+    <meta name="color-scheme" content="light dark"><meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="index" title="Stichwortverzeichnis" href="../genindex.html"><link rel="search" title="Suche" href="../search.html"><link rel="next" title="Eine Garmin-Karte einschalten" href="quickstart-vector-map.html"><link rel="prev" title="Das Hauptfenster" href="quickstart-main-window.html">
 
-    <!-- Generated with Sphinx 9.1.1 and Furo 2025.12.19 --><title>Index - QMapShack documentation</title>
-<link rel="stylesheet" type="text/css" href="_static/pygments.css?v=d111a655" />
-    <link rel="stylesheet" type="text/css" href="_static/styles/furo.css?v=7bdb33bb" />
-    <link rel="stylesheet" type="text/css" href="_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <!-- Generated with Sphinx 9.1.1 and Furo 2025.12.19 -->
+        <title>Karten einschalten - QMapShack-Dokumentation</title>
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=d111a655" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo.css?v=7bdb33bb" />
+    <link rel="stylesheet" type="text/css" href="../_static/styles/furo-extensions.css?v=8dab3a3b" />
+    <link rel="stylesheet" type="text/css" href="../_static/qms-layout.css?v=518cad67" />
     
     
 
@@ -16,18 +19,21 @@
   body {
     --color-code-background: #f2f2f2;
   --color-code-foreground: #1e1e1e;
+  --color-highlight-on-target: transparent;
   
   }
   @media not print {
     body[data-theme="dark"] {
       --color-code-background: #202020;
   --color-code-foreground: #d0d0d0;
+  --color-highlight-on-target: transparent;
   
     }
     @media (prefers-color-scheme: dark) {
       body:not([data-theme="light"]) {
         --color-code-background: #202020;
   --color-code-foreground: #d0d0d0;
+  --color-highlight-on-target: transparent;
   
       }
     }
@@ -147,7 +153,7 @@
 <label class="overlay sidebar-overlay" for="__navigation"></label>
 <label class="overlay toc-overlay" for="__toc"></label>
 
-<a class="skip-to-content muted-link" href="#furo-main-content">Skip to content</a>
+<a class="skip-to-content muted-link" href="#furo-main-content">Zum Inhalt springen</a>
 
 
 
@@ -159,7 +165,7 @@
       </label>
     </div>
     <div class="header-center">
-      <a href="index.html"><div class="brand">QMapShack documentation</div></a>
+      <a href="../index.html"><div class="brand">QMapShack-Dokumentation</div></a>
     </div>
     <div class="header-right">
       <div class="theme-toggle-container theme-toggle-header">
@@ -170,7 +176,7 @@
           <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
         </button>
       </div>
-      <label class="toc-overlay-icon toc-header-icon no-toc" for="__toc">
+      <label class="toc-overlay-icon toc-header-icon" for="__toc">
         <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
       </label>
     </div>
@@ -178,18 +184,26 @@
   <aside class="sidebar-drawer">
     <div class="sidebar-container">
       
-      <div class="sidebar-sticky"><a class="sidebar-brand" href="index.html">
+      <div class="sidebar-sticky"><a class="sidebar-brand" href="../index.html">
   
-  <span class="sidebar-brand-text">QMapShack documentation</span>
+  <span class="sidebar-brand-text">QMapShack-Dokumentation</span>
   
-</a><form class="sidebar-search-container" method="get" action="search.html" role="search">
-  <input class="sidebar-search" placeholder="Search" name="q" aria-label="Search">
+</a><form class="sidebar-search-container" method="get" action="../search.html" role="search">
+  <input class="sidebar-search" placeholder="Suche" name="q" aria-label="Suche">
   <input type="hidden" name="check_keywords" value="yes">
   <input type="hidden" name="area" value="default">
 </form>
 <div id="searchbox"></div><div class="sidebar-scroll"><div class="sidebar-tree">
   <ul class="current">
-<li class="toctree-l1 current current-page"><a class="current reference internal" href="#">Index</a></li>
+<li class="toctree-l1 current has-children"><a class="reference internal" href="quickstart.html">Schnellstart</a><input aria-label="Toggle navigation of Schnellstart" checked="" class="toctree-checkbox" id="toctree-checkbox-1" name="toctree-checkbox-1" role="switch" type="checkbox"/><label for="toctree-checkbox-1"><span class="icon"><svg><use href="#svg-arrow-right"></use></svg></span></label><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="quickstart-main-window.html">Das Hauptfenster</a></li>
+<li class="toctree-l2 current current-page"><a class="current reference internal" href="#">Karten einschalten</a></li>
+<li class="toctree-l2"><a class="reference internal" href="quickstart-vector-map.html">Eine Garmin-Karte einschalten</a></li>
+<li class="toctree-l2"><a class="reference internal" href="quickstart-zoom-pan.html">Zoomen und Verschieben</a></li>
+<li class="toctree-l2"><a class="reference internal" href="quickstart-dem.html">Höhendaten und Schummerung</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../genindex.html">Stichwortverzeichnis</a></li>
 </ul>
 
 </div>
@@ -206,10 +220,12 @@
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
             <path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8v12z"></path>
           </svg>
-          <span>Back to top</span>
+          <span>Nach oben</span>
         </a>
         <div class="content-icon-container">
-          <div class="theme-toggle-container theme-toggle-content">
+          
+
+<div class="theme-toggle-container theme-toggle-content">
             <button class="theme-toggle" aria-label="Toggle Light / Dark / Auto color theme">
               <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
               <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
@@ -217,15 +233,76 @@
               <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
             </button>
           </div>
-          <label class="toc-overlay-icon toc-content-icon no-toc" for="__toc">
+          <label class="toc-overlay-icon toc-content-icon" for="__toc">
             <span class="icon"><svg><use href="#svg-toc"></use></svg></span>
           </label>
         </div>
         <article role="main" id="furo-main-content">
-          
-<section class="genindex-section">
-  <h1 id="index">Index</h1>
-  <div class="genindex-jumpbox"></div>
+          <section id="karten-einschalten">
+<h1>Karten einschalten<a class="headerlink" href="#karten-einschalten" title="Link to this heading">#</a></h1>
+<p>Diese Seite zeigt, wie Sie Ihre ersten Karten in QMapShack bekommen und wie Sie sie anzeigen.</p>
+<p>Bilder: <em>© OpenStreetMap contributors</em>; <em>OpenTopoMap, CC-BY-SA</em>; <em>trails by waymarkedtrails.org</em>.</p>
+<section id="die-eingebauten-karten-holen">
+<span id="index-0"></span><h2>Die eingebauten Karten holen<a class="headerlink" href="#die-eingebauten-karten-holen" title="Link to this heading">#</a></h2>
+<p>QMapShack bringt fünf Online-Karten mit, darunter OpenStreetMap und OSM Topo. Eine Online-Karte braucht eine
+Internetverbindung: QMapShack lädt die Karte, während Sie sie ansehen.</p>
+<ol class="arabic">
+<li><p>Klicken Sie auf <strong>Datei → Kartenverzeichnisse angeben</strong>. Denselben Eintrag finden Sie, wenn Sie mit der
+rechten Maustaste in die Liste im Bereich <strong>Karten</strong> klicken.</p></li>
+<li><img alt="Map path setup" class="align-right" src="../_images/map-path-setup.png" />
+<p>Klicken Sie auf <strong>Hilfe! Ich will Karten! Keine Lust die Anleitung zu lesen!</strong></p>
+</li>
+<li><p>QMapShack fragt <strong>Wo wollen Sie die Karten speichern?</strong> und schlägt schon das Verzeichnis <code class="docutils literal notranslate"><span class="pre">Maps</span></code> in Ihrem
+<a class="reference internal" href="quickstart-main-window.html#das-hauptverzeichnis-einrichten"><span class="std std-ref">Hauptverzeichnis</span></a> vor. Bestätigen Sie es. Der
+Dialog schließt sich von selbst.</p></li>
+<li><img alt="Maps panel" class="align-right" src="../_images/maps-panel.png" />
+<p>Der Bereich <strong>Karten</strong> führt die Karten auf. Eine Karte ist grau, solange sie ausgeschaltet ist.</p>
+<p>Jede Karte heißt wie ihre Datei, ohne den Dateityp und mit Leerzeichen statt Unterstrichen: <code class="docutils literal notranslate"><span class="pre">OSM_Topo.tms</span></code>
+steht in der Liste als <strong>OSM Topo</strong>. QMapShack benennt Höhendaten und POI-Dateien genauso.</p>
+</li>
+</ol>
+</section>
+<section id="eine-karte-einschalten">
+<span id="index-1"></span><h2>Eine Karte einschalten<a class="headerlink" href="#eine-karte-einschalten" title="Link to this heading">#</a></h2>
+<ol class="arabic">
+<li><img alt="Osm button" class="align-right" src="../_images/osm-button.png" />
+<p>Um eine Karte einzuschalten, klicken Sie auf den Knopf in ihrer Zeile im Bereich <strong>Karten</strong>. Ein weiterer
+Klick schaltet die Karte wieder aus.</p>
+</li>
+<li><p>Schalten Sie <strong>OpenStreetMap</strong> ein. Die Zeile der Karte wird fett und zeigt <strong>aktiv</strong>, und die Karte ersetzt die
+Begrüßungsseite.</p>
+<img alt="Osm on" class="below-right" src="../_images/osm-on.png" />
+</li>
+</ol>
+</section>
+<section id="karten-stapeln">
+<span id="index-2"></span><h2>Karten stapeln<a class="headerlink" href="#karten-stapeln" title="Link to this heading">#</a></h2>
+<p>Wenn mehrere Karten eingeschaltet sind, liegen sie in der Reihenfolge der Liste übereinander: Eine Karte verdeckt
+die Karten über ihr.</p>
+<ol class="arabic">
+<li><p>Schalten Sie auch <strong>OSM Topo</strong> ein. Die Karte steht in der Liste unter <strong>OpenStreetMap</strong> und verdeckt diese
+deshalb.</p>
+<img alt="Both on" class="below-right" src="../_images/both-on.png" />
+</li>
+<li><p>Um die Reihenfolge zu ändern, ziehen Sie eine Karte in der Liste nach oben oder unten. Oder wählen Sie sie aus
+und drücken <strong>Umschalt+Hoch</strong> oder <strong>Umschalt+Herunter</strong>; das Kontextmenü hat dafür auch
+<strong>Nach oben verschieben</strong> und <strong>Nach unten verschieben</strong>. Steht <strong>OSM Topo</strong> weiter oben,
+verdeckt <strong>OpenStreetMap</strong> sie.</p>
+<img alt="Topo up" class="below-right" src="../_images/topo-up.png" />
+</li>
+</ol>
+</section>
+<section id="eine-karte-durchscheinend-machen">
+<span id="index-3"></span><h2>Eine Karte durchscheinend machen<a class="headerlink" href="#eine-karte-durchscheinend-machen" title="Link to this heading">#</a></h2>
+<ol class="arabic">
+<li><p>Um die untere Karte durch die obere zu sehen, klicken Sie auf den Pfeil links vom Namen der oberen Karte. Ihre
+Einstellungen öffnen sich unter der Zeile.</p></li>
+<li><p>Ziehen Sie den Schieberegler unter dem Namen nach links, um die Deckkraft der Karte zu senken. Hier ist
+<strong>OSM Topo</strong> halb durchscheinend über <strong>OpenStreetMap</strong>.</p>
+<img alt="Topo half" class="below-right" src="../_images/topo-half.png" />
+</li>
+</ol>
+</section>
 </section>
 
         </article>
@@ -233,15 +310,33 @@
       <footer>
         
         <div class="related-pages">
-          
-          
+          <a class="next-page" href="quickstart-vector-map.html">
+              <div class="page-info">
+                <div class="context">
+                  <span>Weiter</span>
+                </div>
+                <div class="title">Eine Garmin-Karte einschalten</div>
+              </div>
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+            </a>
+          <a class="prev-page" href="quickstart-main-window.html">
+              <svg class="furo-related-icon"><use href="#svg-arrow-right"></use></svg>
+              <div class="page-info">
+                <div class="context">
+                  <span>Zurück</span>
+                </div>
+                
+                <div class="title">Das Hauptfenster</div>
+                
+              </div>
+            </a>
         </div>
         <div class="bottom-of-page">
           <div class="left-details">
             <div class="copyright">
                 Copyright &#169; the QMapShack authors
             </div>
-            Made with <a href="https://www.sphinx-doc.org/">Sphinx</a> and <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
+            Erstellt mit <a href="https://www.sphinx-doc.org/">Sphinx</a> und <a class="muted-link" href="https://pradyunsg.me">@pradyunsg</a>'s
             
             <a href="https://github.com/pradyunsg/furo">Furo</a>
             
@@ -253,16 +348,39 @@
         
       </footer>
     </div>
-    <aside class="toc-drawer no-toc">
+    <aside class="toc-drawer">
       
+      
+      <div class="toc-sticky toc-scroll">
+        <div class="toc-title-container">
+          <span class="toc-title">
+            Auf dieser Seite
+          </span>
+        </div>
+        <div class="toc-tree-container">
+          <div class="toc-tree">
+            <ul>
+<li><a class="reference internal" href="#">Karten einschalten</a><ul>
+<li><a class="reference internal" href="#die-eingebauten-karten-holen">Die eingebauten Karten holen</a></li>
+<li><a class="reference internal" href="#eine-karte-einschalten">Eine Karte einschalten</a></li>
+<li><a class="reference internal" href="#karten-stapeln">Karten stapeln</a></li>
+<li><a class="reference internal" href="#eine-karte-durchscheinend-machen">Eine Karte durchscheinend machen</a></li>
+</ul>
+</li>
+</ul>
+
+          </div>
+        </div>
+      </div>
       
       
     </aside>
   </div>
-</div><script src="_static/documentation_options.js?v=7f41d439"></script>
-    <script src="_static/doctools.js?v=fd6eb6e6"></script>
-    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
-    <script src="_static/scripts/furo.js?v=46bd48cc"></script>
-    <script src="_static/qms-search.js?v=dd172957"></script>
+</div><script src="../_static/documentation_options.js?v=9fe942fc"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="../_static/scripts/furo.js?v=46bd48cc"></script>
+    <script src="../_static/translations.js?v=9bf55d28"></script>
+    <script src="../_static/qms-search.js?v=dd172957"></script>
     </body>
 </html>
